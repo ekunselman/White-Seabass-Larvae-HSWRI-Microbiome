@@ -1,0 +1,903 @@
+#Qiime2 on Windows to analyze WSB Probiotic Microbiome data
+
+# Install Windows Subsystem for Linux (WSL)
+wsl --install
+
+# Download most recent Ubuntu from Microsoft Store (I now have 24.04.1)
+
+# Download miniconda in the WSL Ubuntu terminal
+wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
+bash Miniconda3-latest-Linux-x86_64.sh
+conda update conda
+
+# Install qiime2 with environment
+conda env create \
+  --name qiime2-amplicon-2025.7 \
+  --file https://raw.githubusercontent.com/qiime2/distributions/refs/heads/dev/2025.7/amplicon/released/qiime2-amplicon-ubuntu-latest-conda.yml
+# verify this worked
+conda activate qiime2-amplicon-2025.7
+qiime info
+
+# install Docker ("sudo" means I am doing it as an admin)
+sudo snap install docker
+sudo docker pull quay.io/qiime2/amplicon:2025.7
+docker run \
+  -v $(pwd):/data \
+  -it quay.io/qiime2/amplicon:2025.7 \
+  qiime info
+
+# make sure files are in the PC OS (C:), by moving directory to this location
+# can access this via /mnt/c/Users/ekunselman/MICROBIOME_SEQUENCING
+
+# Create a manifest and import sequence files
+qiime tools import \
+--type 'SampleData[PairedEndSequencesWithQuality]' \
+--input-path /mnt/c/Users/ekunselman/MICROBIOME_SEQUENCING/Manifest.txt \
+--output-path paired-end-demux.qza \
+--input-format PairedEndFastqManifestPhred33V2
+
+# barcodes and adaptors already removed
+
+# Can now find paired-end demux in qiime2_projects/WSB_Probiotic/
+
+# Visualize demux file
+qiime demux summarize \
+  --i-data paired-end-demux.qza \
+  --o-visualization paired-end-demux.qzv
+
+# In order to view it from within terminal
+qiime tools view paired-end-demux.qzv
+
+# check out the interactive quality plot to assess read quality
+# at each end of both forward and reverse reads
+
+# Sequence Quality Control and feature table creation
+# DADA2 is a pipeline for denoising/correcting Illumina amplicon data
+# trim-left-f a, trims off first a bases of each forward read
+# trunc-len-f b truncates each forward read at position b
+# trim-left-r c, trims off first c bases of each reverse read
+# trunc-len-r d truncates each reverse read at position d
+
+qiime dada2 denoise-paired \
+  --i-demultiplexed-seqs paired-end-demux.qza \
+  --p-trim-left-f 0 \
+  --p-trunc-len-f 175 \
+  --p-trim-left-r 0 \
+  --p-trunc-len-r 100 \
+  --o-representative-sequences asv-rep-seqs.qza \
+  --o-table asv-dada2-table.qza \
+  --o-denoising-stats dada2-stats.qza
+
+  qiime metadata tabulate \
+  --m-input-file dada2-stats.qza \
+  --o-visualization dada2-stats.qzv
+
+  qiime tools view dada2-stats.qzv
+
+# option 2 for cutoff
+qiime dada2 denoise-paired \
+  --i-demultiplexed-seqs paired-end-demux.qza \
+  --p-trim-left-f 0 \
+  --p-trunc-len-f 170 \
+  --p-trim-left-r 0 \
+  --p-trunc-len-r 100 \
+  --o-representative-sequences asv-rep-seqs2.qza \
+  --o-table asv-dada2-table2.qza \
+  --o-denoising-stats dada2-stats2.qza
+qiime metadata tabulate \
+    --m-input-file dada2-stats2.qza \
+    --o-visualization dada2-stats2.qzv
+qiime tools view dada2-stats2.qzv
+#option 2 is marginally better
+
+# Summarize the feature table and get some data summaries
+#first move metadata to environment
+cp /mnt/c/Users/ekunselman/MICROBIOME_SEQUENCING/metadata.tsv* qiime2_projects/WSB_Probiotic/
+qiime feature-table summarize-plus \
+  --i-table asv-dada2-table2.qza \
+  --m-metadata-file metadata.tsv \
+  --o-summary asv-dada2-table2.qzv \
+  --o-sample-frequencies dada2-sample-frequencies.qza \
+  --o-feature-frequencies dada2-asv-frequencies.qza
+# visualize the asv frequencies and sequences
+qiime feature-table tabulate-seqs \
+  --i-data asv-rep-seqs2.qza \
+  --m-metadata-file dada2-asv-frequencies.qza \
+  --o-visualization dada2-asv-seqs.qzv
+qiime tools view dada2-asv-seqs.qzv
+
+# Filter - remove singletons
+qiime feature-table filter-features \
+  --i-table asv-dada2-table2.qza \
+  --p-min-samples 2 \
+  --o-filtered-table asv-table-filt.qza
+  qiime feature-table filter-seqs \
+  --i-data asv-rep-seqs2.qza \
+  --i-table asv-table-filt.qza \
+  --o-filtered-data asv-seqs-filt.qza
+  qiime feature-table summarize-plus \
+    --i-table asv-table-filt.qza \
+    --m-metadata-file metadata.tsv \
+    --o-summary asv-dada2-filt.qzv \
+    --o-sample-frequencies dada2-sample-frequencies-f.qza \
+    --o-feature-frequencies dada2-asv-frequencies-f.qza
+
+# CLassify the taxonomy
+# Here I will use a pre-trained classifier
+# first testing the Greengenes2 database
+cp /mnt/c/Users/ekunselman/MICROBIOME_SEQUENCING/2024.09.backbone.v4.nb.sklearn-1.4.2.qza* qiime2_projects/WSB_Probiotic/
+# followed by the most recent Silva database
+cp /mnt/c/Users/ekunselman/MICROBIOME_SEQUENCING/silva-138-99-nb-classifier.qza* qiime2_projects/WSB_Probiotic/
+
+# apply classifier to the sequences using sklearn
+# Greengenes2
+qiime feature-classifier classify-sklearn \
+  --i-classifier 2024.09.backbone.v4.nb.sklearn-1.4.2.qza \
+  --i-reads asv-seqs-filt.qza \
+  --o-classification gg-taxonomy.qza
+
+# Silva
+qiime feature-classifier classify-sklearn \
+  --i-classifier silva-138-99-nb-classifier.qza \
+  --i-reads asv-seqs-filt.qza \
+  --o-classification silva-taxonomy.qza
+
+# Visualize taxonomic classifications across databases
+qiime feature-table tabulate-seqs \
+  --i-data asv-seqs-filt.qza \
+  --i-taxonomy gg-taxonomy.qza silva-taxonomy.qza \
+  --m-metadata-file dada2-asv-frequencies-f.qza \
+  --o-visualization taxonomic-classification-comparison.qzv
+qiime tools view taxonomic-classification-comparison.qzv
+
+# definitely some discrepancy between the two, might be from updated nomenclature
+# prefer to use more recent Greengenes2
+# just be aware that some sequences labeled as mitochondria in silva are bacteria, unassigned or Rickettsiaceae in greengenes2
+
+
+# Generate a Phylogenetic Tree
+
+# better to use sepp fragment insertion than building a de novo tree
+
+# first, download the greengenes 13_8 99% identity reference tree backbone
+wget \
+  -O "sepp-refs-gg-13-8.qza" \
+  "https://data.qiime2.org/classifiers/sepp-ref-dbs/sepp-refs-gg-13-8.qza"
+
+# then, run fragment insertion
+qiime fragment-insertion sepp \
+  --i-representative-sequences asv-seqs-filt.qza \
+  --i-reference-database sepp-refs-gg-13-8.qza \
+  --o-tree tree.qza \
+  --o-placements tree_placements.qza \
+  --p-threads 8 \
+  --verbose
+  Plugin error from fragment-insertion:
+
+    Command '['run-sepp.sh', '/tmp/qiime2/ekunselman/data/630eb6cf-1ee9-4a8c-9c4a-5272f6c9f400/data/dna-sequences.fasta', 'q2-fragment-insertion', '-x', '8', '-A', '1000', '-P', '5000', '-a', '/tmp/qiime2/ekunselman/data/a14c6180-506b-4ecb-bacb-9cb30bc3044b/data/aligned-dna-sequences.fasta', '-t', '/tmp/qiime2/ekunselman/data/a14c6180-506b-4ecb-bacb-9cb30bc3044b/data/tree.nwk', '-r', '/tmp/qiime2/ekunselman/data/a14c6180-506b-4ecb-bacb-9cb30bc3044b/data/raxml-info.txt']' returned non-zero exit status 1.
+
+  Debug info has been saved to /tmp/qiime2-q2cli-err-almh_i6f.log
+# this is not working in WSL, so I am going to run this command on my laptop
+cp qiime2_projects/WSB_Probiotic/asv-seqs-filt.qza* /mnt/c/Users/ekunselman/MICROBIOME_SEQUENCING/
+#  I installed qiime2-2025.7 for mac
+cp /mnt/c/Users/ekunselman/MICROBIOME_SEQUENCING/tree.qza* qiime2_projects/WSB_Probiotic/
+cp /mnt/c/Users/ekunselman/MICROBIOME_SEQUENCING/tree_placements.qza* qiime2_projects/WSB_Probiotic/
+
+
+
+# Taxonomic Bar Plot
+qiime taxa barplot \
+  --i-table asv-table-filt.qza \
+  --i-taxonomy gg-taxonomy.qza \
+  --m-metadata-file metadata.tsv \
+  --o-visualization taxa-bar-plot.qzv
+qiime tools view taxa-bar-plot.qzv
+
+# Taxonomic filtration
+# will need to remove mitochondria and chloroplast sequences
+qiime taxa filter-table \
+  --i-table asv-table-filt.qza \
+  --i-taxonomy gg-taxonomy.qza \
+  --p-exclude Mitochondria,Chloroplast \
+  --o-filtered-table asv-table-taxa-filt.qza
+qiime feature-table summarize-plus \
+  --i-table asv-table-taxa-filt.qza \
+  --m-metadata-file metadata.tsv \
+  --o-summary asv-table-taxa-filt.qzv \
+  --o-sample-frequencies dada2-sample-frequencies-t-f.qza \
+  --o-feature-frequencies dada2-asv-frequencies-t-f.qza
+qiime taxa barplot \
+  --i-table asv-table-taxa-filt.qza \
+  --i-taxonomy gg-taxonomy.qza \
+  --m-metadata-file metadata.tsv \
+  --o-visualization taxa-bar-plot-t-f.qzv
+qiime tools view taxa-bar-plot-t-f.qzv
+
+
+# Alpha rarefaction Curves to determine sampling depth
+qiime diversity alpha-rarefaction \
+  --i-table asv-table-filt.qza \
+  --p-max-depth 50000 \
+  --m-metadata-file metadata.tsv \
+  --o-visualization alpha-rarefaction.qzv
+qiime tools view alpha-rarefaction.qzv
+
+# Diversity analysis
+qiime diversity core-metrics-phylogenetic \
+--i-table asv-table-taxa-filt.qza \
+--i-phylogeny tree.qza \
+--p-sampling-depth 26300 \
+--m-metadata-file metadata.tsv \
+--output-dir diversity-core-metrics-phylogenetic-26300
+qiime tools view diversity-core-metrics-phylogenetic-26300/weighted_unifrac_emperor.qzv
+
+
+qiime diversity core-metrics-phylogenetic \
+--i-table asv-table-taxa-filt.qza \
+--i-phylogeny tree.qza \
+--p-sampling-depth 92000 \
+--m-metadata-file metadata.tsv \
+--output-dir diversity-core-metrics-phylogenetic-92000
+qiime tools view diversity-core-metrics-phylogenetic-92000/weighted_unifrac_emperor.qzv
+
+# FILTER SAMPLES - need to remove some problematic samples that all cluster very closely
+# these are all LCW 5dph and all ART control
+# also need to remove low sequence count samples
+qiime feature-table filter-samples \
+  --i-table asv-table-taxa-filt.qza \
+  --m-metadata-file metadata.tsv \
+  --p-where "[sample_type]='LCW' AND [days_post_hatch]='5'" \
+  --p-exclude-ids \
+  --o-filtered-table table-interim-filter.qza
+# 13 samples removed
+qiime feature-table filter-samples \
+  --i-table table-interim-filter.qza \
+  --m-metadata-file metadata.tsv \
+  --p-where "[sample_type]='ART' AND [treatment]='c'" \
+  --p-exclude-ids \
+  --o-filtered-table asv-table-taxa-sample-filt.qza
+# 9 samples removed
+qiime feature-table summarize \
+  --i-table asv-table-taxa-sample-filt.qza \
+  --m-sample-metadata-file metadata.tsv \
+  --o-visualization asv-table-taxa-sample-filt.qzv
+qiime tools view asv-table-taxa-sample-filt.qzv
+#22 total samples removed - check
+
+# Re-run DIVERSITY analyses
+qiime diversity core-metrics-phylogenetic \
+--i-table asv-table-taxa-sample-filt.qza \
+--i-phylogeny tree.qza \
+--p-sampling-depth 22180 \
+--m-metadata-file metadata.tsv \
+--output-dir diversity-core-metrics-phylogenetic-22180-filt
+qiime tools view diversity-core-metrics-phylogenetic-22180-filt/weighted_unifrac_emperor.qzv
+qiime tools view diversity-core-metrics-phylogenetic-22180-filt/unweighted_unifrac_emperor.qzv
+qiime diversity alpha-group-significance \
+--i-alpha-diversity diversity-core-metrics-phylogenetic-22180-filt/shannon_vector.qza \
+--m-metadata-file metadata.tsv \
+--o-visualization diversity-core-metrics-phylogenetic-22180-filt/shannon-group-significance.qzv
+qiime tools view diversity-core-metrics-phylogenetic-22180-filt/shannon-group-significance.qzv
+
+#ALPHA DIVERSITY
+# LCW compared to LF
+# across all timepoints and treatments
+qiime diversity alpha-group-significance \
+--i-alpha-diversity LCW_LF/diversity-core-metrics-phylogenetic-22180/shannon_vector.qza \
+--m-metadata-file metadata.tsv \
+--o-visualization LCW_LF/diversity-core-metrics-phylogenetic-22180/shannon-group-significance.qzv
+qiime tools view LCW_LF/diversity-core-metrics-phylogenetic-22180/shannon-group-significance.qzv
+# across 11 and 18 dph only
+mkdir LCW_LF/11_18dph/
+qiime feature-table filter-samples \
+  --i-table LCW_LF/LCW_LF-table.qza \
+  --m-metadata-file metadata.tsv \
+  --p-where "[days_post_hatch] IN ("11", "18")" \
+  --o-filtered-table LCW_LF/11_18dph/LCW_LF-11_18-table.qza
+qiime diversity core-metrics-phylogenetic \
+  --i-table LCW_LF/11_18dph/LCW_LF-11_18-table.qza \
+  --i-phylogeny tree.qza \
+  --p-sampling-depth 22180 \
+  --m-metadata-file metadata.tsv \
+  --output-dir LCW_LF/11_18dph/diversity-core-metrics-phylogenetic-22180
+qiime diversity alpha-group-significance \
+  --i-alpha-diversity LCW_LF/11_18dph/diversity-core-metrics-phylogenetic-22180/shannon_vector.qza \
+  --m-metadata-file metadata.tsv \
+  --o-visualization LCW_LF/11_18dph/diversity-core-metrics-phylogenetic-22180/shannon-group-significance.qzv
+qiime tools view LCW_LF/11_18dph/diversity-core-metrics-phylogenetic-22180/shannon-group-significance.qzv
+
+
+#BETA DIVERSITY
+# Run adonis on treatment, accounting for sample type and dph
+# first need to remove Artemia
+mkdir LCW_LF/
+qiime feature-table filter-samples \
+  --i-table asv-table-taxa-sample-filt.qza \
+  --m-metadata-file metadata.tsv \
+  --p-where "[sample_type]='ART'" \
+  --p-exclude-ids \
+  --o-filtered-table LCW_LF/LCW_LF-table.qza
+qiime diversity core-metrics-phylogenetic \
+  --i-table LCW_LF/LCW_LF-table.qza \
+  --i-phylogeny tree.qza \
+  --p-sampling-depth 22180 \
+  --m-metadata-file metadata.tsv \
+  --output-dir LCW_LF/diversity-core-metrics-phylogenetic-22180
+qiime tools view LCW_LF/diversity-core-metrics-phylogenetic-22180/weighted_unifrac_emperor.qzv
+qiime tools view LCW_LF/diversity-core-metrics-phylogenetic-22180/unweighted_unifrac_emperor.qzv
+
+qiime diversity adonis \
+  --i-distance-matrix LCW_LF/diversity-core-metrics-phylogenetic-22180/weighted_unifrac_distance_matrix.qza \
+  --m-metadata-file metadata.tsv \
+  --p-formula "treatment+sample_type+days_post_hatch" \
+  --p-permutations 999 \
+  --o-visualization LCW_LF/adonis_weighted_unifrac_treatment_sampletype_dph.qzv
+# does it matter which order the formula goes in?
+qiime diversity adonis \
+  --i-distance-matrix LCW_LF/diversity-core-metrics-phylogenetic-22180/weighted_unifrac_distance_matrix.qza \
+  --m-metadata-file metadata.tsv \
+  --p-formula "sample_type+days_post_hatch+treatment" \
+  --p-permutations 999 \
+  --o-visualization LCW_LF/adonis_weighted_unifrac_sampletype_dph_treatment.qzv
+# it does matter!
+qiime diversity adonis \
+  --i-distance-matrix LCW_LF/diversity-core-metrics-phylogenetic-22180/unweighted_unifrac_distance_matrix.qza \
+  --m-metadata-file metadata.tsv \
+  --p-formula "sample_type+days_post_hatch+treatment" \
+  --p-permutations 999 \
+  --o-visualization LCW_LF/adonis_unweighted_unifrac_sampletype_dph_treatment.qzv
+
+# should confirm with just 11 and 18 dph
+qiime tools view LCW_LF/11_18dph/diversity-core-metrics-phylogenetic-22180/weighted_unifrac_emperor.qzv
+qiime tools view LCW_LF/11_18dph/diversity-core-metrics-phylogenetic-22180/unweighted_unifrac_emperor.qzv
+qiime diversity adonis \
+  --i-distance-matrix LCW_LF/11_18dph/diversity-core-metrics-phylogenetic-22180/weighted_unifrac_distance_matrix.qza \
+  --m-metadata-file metadata.tsv \
+  --p-formula "sample_type+days_post_hatch+treatment" \
+  --p-permutations 999 \
+  --o-visualization LCW_LF/11_18dph/adonis_weighted_unifrac_sampletype_dph_treatment.qzv
+qiime diversity adonis \
+  --i-distance-matrix LCW_LF/11_18dph/diversity-core-metrics-phylogenetic-22180/unweighted_unifrac_distance_matrix.qza \
+  --m-metadata-file metadata.tsv \
+  --p-formula "sample_type+days_post_hatch+treatment" \
+  --p-permutations 999 \
+  --o-visualization LCW_LF/11_18dph/adonis_unweighted_unifrac_sampletype_dph_treatment.qzv
+qiime diversity beta-group-significance \
+  --i-distance-matrix LCW_LF/11_18dph/diversity-core-metrics-phylogenetic-22180/weighted_unifrac_distance_matrix.qza \
+  --m-metadata-file metadata.tsv \
+  --m-metadata-column sample_type \
+  --p-method permdisp \
+  --o-visualization LCW_LF/11_18dph/weighted_unifrac_beta_group_disp.qzv
+qiime diversity beta-group-significance \
+  --i-distance-matrix LCW_LF/11_18dph/diversity-core-metrics-phylogenetic-22180/unweighted_unifrac_distance_matrix.qza \
+  --m-metadata-file metadata.tsv \
+  --m-metadata-column sample_type \
+  --p-method permdisp \
+  --o-visualization LCW_LF/11_18dph/unweighted_unifrac_beta_group_disp.qzv
+
+# Within each sample type (LCW or LF), do samples vary by treatment?
+mkdir LCW/
+qiime feature-table filter-samples \
+  --i-table asv-table-taxa-sample-filt.qza \
+  --m-metadata-file metadata.tsv \
+  --p-where "[sample_type]='LCW'" \
+  --o-filtered-table LCW/LCW-table.qza
+qiime diversity core-metrics-phylogenetic \
+  --i-table LCW/LCW-table.qza \
+  --i-phylogeny tree.qza \
+  --p-sampling-depth 22180 \
+  --m-metadata-file metadata.tsv \
+  --output-dir LCW/diversity-core-metrics-phylogenetic-22180
+qiime tools view LCW/diversity-core-metrics-phylogenetic-22180/weighted_unifrac_emperor.qzv
+qiime tools view LCW/diversity-core-metrics-phylogenetic-22180/unweighted_unifrac_emperor.qzv
+qiime diversity adonis \
+  --i-distance-matrix LCW/diversity-core-metrics-phylogenetic-22180/weighted_unifrac_distance_matrix.qza \
+  --m-metadata-file metadata.tsv \
+  --p-formula "days_post_hatch+treatment" \
+  --p-permutations 999 \
+  --o-visualization LCW/adonis_weighted_unifrac_dph_treatment.qzv
+qiime diversity adonis \
+  --i-distance-matrix LCW/diversity-core-metrics-phylogenetic-22180/unweighted_unifrac_distance_matrix.qza \
+  --m-metadata-file metadata.tsv \
+  --p-formula "days_post_hatch+treatment" \
+  --p-permutations 999 \
+  --o-visualization LCW/adonis_unweighted_unifrac_dph_treatment.qzv
+
+qiime diversity beta-group-significance \
+    --i-distance-matrix LCW/diversity-core-metrics-phylogenetic-22180/weighted_unifrac_distance_matrix.qza \
+    --m-metadata-file metadata.tsv \
+    --m-metadata-column treatment \
+    --o-visualization LCW/weighted_unifrac_beta_group_sig.qzv \
+    --p-pairwise
+qiime diversity beta-group-significance \
+    --i-distance-matrix LCW/diversity-core-metrics-phylogenetic-22180/unweighted_unifrac_distance_matrix.qza \
+    --m-metadata-file metadata.tsv \
+    --m-metadata-column treatment \
+    --o-visualization LCW/unweighted_unifrac_beta_group_sig.qzv \
+    --p-pairwise
+
+# what about within LCW at each timepoint?
+mkdir LCW/11dph
+qiime feature-table filter-samples \
+  --i-table LCW/LCW-table.qza \
+  --m-metadata-file metadata.tsv \
+  --p-where "[days_post_hatch]='11'" \
+  --o-filtered-table LCW/11dph/LCW-11dph-table.qza
+qiime diversity core-metrics-phylogenetic \
+  --i-table LCW/11dph/LCW-11dph-table.qza \
+  --i-phylogeny tree.qza \
+  --p-sampling-depth 22180 \
+  --m-metadata-file metadata.tsv \
+  --output-dir LCW/11dph/diversity-core-metrics-phylogenetic-22180
+qiime diversity adonis \
+  --i-distance-matrix LCW/11dph/diversity-core-metrics-phylogenetic-22180/unweighted_unifrac_distance_matrix.qza \
+  --m-metadata-file metadata.tsv \
+  --p-formula "treatment" \
+  --p-permutations 999 \
+  --o-visualization LCW/11dph/adonis_unweighted_unifrac_dph_treatment.qzv
+qiime tools view LCW/11dph/adonis_unweighted_unifrac_dph_treatment.qzv
+
+mkdir LCW/18dph
+qiime feature-table filter-samples \
+  --i-table LCW/LCW-table.qza \
+  --m-metadata-file metadata.tsv \
+  --p-where "[days_post_hatch]='18'" \
+  --o-filtered-table LCW/18dph/LCW-18dph-table.qza
+qiime diversity core-metrics-phylogenetic \
+  --i-table LCW/18dph/LCW-18dph-table.qza \
+  --i-phylogeny tree.qza \
+  --p-sampling-depth 22180 \
+  --m-metadata-file metadata.tsv \
+  --output-dir LCW/18dph/diversity-core-metrics-phylogenetic-22180
+qiime diversity adonis \
+  --i-distance-matrix LCW/18dph/diversity-core-metrics-phylogenetic-22180/unweighted_unifrac_distance_matrix.qza \
+  --m-metadata-file metadata.tsv \
+  --p-formula "treatment" \
+  --p-permutations 999 \
+  --o-visualization LCW/18dph/adonis_unweighted_unifrac_dph_treatment.qzv
+qiime tools view LCW/18dph/adonis_unweighted_unifrac_dph_treatment.qzv
+# still no - weighted unifrac significantly differs across treatment but unweighted unifrac does not
+
+
+mkdir LF/
+qiime feature-table filter-samples \
+  --i-table asv-table-taxa-sample-filt.qza \
+  --m-metadata-file metadata.tsv \
+  --p-where "[sample_type]='LF'" \
+  --o-filtered-table LF/LF-table.qza
+qiime diversity core-metrics-phylogenetic \
+  --i-table LF/LF-table.qza \
+  --i-phylogeny tree.qza \
+  --p-sampling-depth 22180 \
+  --m-metadata-file metadata.tsv \
+  --output-dir LF/diversity-core-metrics-phylogenetic-22180
+qiime tools view LF/diversity-core-metrics-phylogenetic-22180/weighted_unifrac_emperor.qzv
+qiime tools view LF/diversity-core-metrics-phylogenetic-22180/unweighted_unifrac_emperor.qzv
+    # stats
+qiime diversity adonis \
+  --i-distance-matrix LF/diversity-core-metrics-phylogenetic-22180/weighted_unifrac_distance_matrix.qza \
+  --m-metadata-file metadata.tsv \
+  --p-formula "days_post_hatch+treatment" \
+  --p-permutations 999 \
+  --o-visualization LF/adonis_weighted_unifrac_dph_treatment.qzv
+qiime diversity adonis \
+  --i-distance-matrix LF/diversity-core-metrics-phylogenetic-22180/unweighted_unifrac_distance_matrix.qza \
+  --m-metadata-file metadata.tsv \
+  --p-formula "days_post_hatch+treatment" \
+  --p-permutations 999 \
+  --o-visualization LF/adonis_unweighted_unifrac_dph_treatment.qzv
+  # pairwise
+qiime diversity beta-group-significance \
+  --i-distance-matrix LF/diversity-core-metrics-phylogenetic-22180/weighted_unifrac_distance_matrix.qza \
+  --m-metadata-file metadata2.tsv \
+  --m-metadata-column Time \
+  --o-visualization LF/weighted_unifrac_beta_group_sig.qzv \
+  --p-pairwise # all significantly different from one another
+qiime diversity beta-group-significance \
+  --i-distance-matrix LF/diversity-core-metrics-phylogenetic-22180/unweighted_unifrac_distance_matrix.qza \
+  --m-metadata-file metadata2.tsv \
+  --m-metadata-column Time \
+  --o-visualization LF/unweighted_unifrac_beta_group_sig.qzv \
+  --p-pairwise # all significantly different from one another
+
+# check beta dispersion at each timepoint
+qiime diversity beta-group-significance \
+  --i-distance-matrix LF/diversity-core-metrics-phylogenetic-22180/weighted_unifrac_distance_matrix.qza \
+  --m-metadata-file metadata2.tsv \
+  --m-metadata-column Time \
+  --p-method permdisp \
+  --o-visualization LF/weighted_unifrac_beta_group_disp.qzv \
+  --p-pairwise
+qiime diversity beta-group-significance \
+  --i-distance-matrix LF/diversity-core-metrics-phylogenetic-22180/unweighted_unifrac_distance_matrix.qza \
+  --m-metadata-file metadata2.tsv \
+  --m-metadata-column Time \
+  --p-method permdisp \
+  --o-visualization LF/unweighted_unifrac_beta_group_disp.qzv \
+  --p-pairwise
+
+  # check each dph for differences across treatment
+mkdir LF/1dph/
+qiime feature-table filter-samples \
+    --i-table LF/LF-table.qza \
+    --m-metadata-file metadata.tsv \
+    --p-where "[days_post_hatch]='1'" \
+    --o-filtered-table LF/1dph/LF-1dph-table.qza
+# most abundant phyla
+qiime taxa collapse \
+    --i-table LF/1dph/LF-1dph-table.qza \
+    --i-taxonomy gg-taxonomy.qza \
+    --p-level 2 \
+    --o-collapsed-table collapsed_phyla_table.qza
+qiime tools export \
+    --input-path collapsed_phyla_table.qza \
+    --output-path collapsed_phyla_table_1dph
+biom convert -i collapsed_phyla_table_1dph/feature-table.biom -o collapsed_phyla_table_1dph.csv --to-tsv
+cp collapsed_phyla_table_1dph.csv* /mnt/c/Users/ekunselman/MICROBIOME_SEQUENCING/
+  # 1 dph has to many samples removed
+
+mkdir LF/5dph/
+qiime feature-table filter-samples \
+    --i-table LF/LF-table.qza \
+    --m-metadata-file metadata.tsv \
+    --p-where "[days_post_hatch]='5'" \
+    --o-filtered-table LF/5dph/LF-5dph-table.qza
+qiime diversity core-metrics-phylogenetic \
+  --i-table LF/5dph/LF-5dph-table.qza \
+  --i-phylogeny tree.qza \
+  --p-sampling-depth 22180 \
+  --m-metadata-file metadata.tsv \
+  --output-dir LF/5dph/diversity-core-metrics-phylogenetic-22180
+qiime tools view LF/5dph/diversity-core-metrics-phylogenetic-22180/weighted_unifrac_emperor.qzv
+qiime tools view LF/5dph/diversity-core-metrics-phylogenetic-22180/unweighted_unifrac_emperor.qzv
+# most abundant phyla
+qiime taxa collapse \
+    --i-table LF/5dph/LF-5dph-table.qza \
+    --i-taxonomy gg-taxonomy.qza \
+    --p-level 2 \
+    --o-collapsed-table collapsed_phyla_table.qza
+qiime tools export \
+    --input-path collapsed_phyla_table.qza \
+    --output-path collapsed_phyla_table_5dph
+biom convert -i collapsed_phyla_table_5dph/feature-table.biom -o collapsed_phyla_table_5dph.csv --to-tsv
+cp collapsed_phyla_table_5dph.csv* /mnt/c/Users/ekunselman/MICROBIOME_SEQUENCING/
+
+mkdir LF/11dph/
+qiime feature-table filter-samples \
+    --i-table LF/LF-table.qza \
+    --m-metadata-file metadata.tsv \
+    --p-where "[days_post_hatch]='11'" \
+    --o-filtered-table LF/11dph/LF-11dph-table.qza
+qiime diversity core-metrics-phylogenetic \
+  --i-table LF/11dph/LF-11dph-table.qza \
+  --i-phylogeny tree.qza \
+  --p-sampling-depth 22180 \
+  --m-metadata-file metadata.tsv \
+  --output-dir LF/11dph/diversity-core-metrics-phylogenetic-22180
+qiime tools view LF/11dph/diversity-core-metrics-phylogenetic-22180/weighted_unifrac_emperor.qzv
+qiime tools view LF/11dph/diversity-core-metrics-phylogenetic-22180/unweighted_unifrac_emperor.qzv
+# most abundant phyla
+qiime taxa collapse \
+    --i-table LF/11dph/LF-11dph-table.qza \
+    --i-taxonomy gg-taxonomy.qza \
+    --p-level 2 \
+    --o-collapsed-table collapsed_phyla_table.qza
+qiime tools export \
+    --input-path collapsed_phyla_table.qza \
+    --output-path collapsed_phyla_table_11dph
+biom convert -i collapsed_phyla_table_11dph/feature-table.biom -o collapsed_phyla_table_11dph.csv --to-tsv
+cp collapsed_phyla_table_11dph.csv* /mnt/c/Users/ekunselman/MICROBIOME_SEQUENCING/
+
+mkdir LF/18dph/
+qiime feature-table filter-samples \
+    --i-table LF/LF-table.qza \
+    --m-metadata-file metadata.tsv \
+    --p-where "[days_post_hatch]='18'" \
+    --o-filtered-table LF/18dph/LF-18dph-table.qza
+qiime diversity core-metrics-phylogenetic \
+  --i-table LF/18dph/LF-18dph-table.qza \
+  --i-phylogeny tree.qza \
+  --p-sampling-depth 22180 \
+  --m-metadata-file metadata.tsv \
+  --output-dir LF/18dph/diversity-core-metrics-phylogenetic-22180
+# most abundant phyla
+  qiime taxa collapse \
+      --i-table LF/18dph/LF-18dph-table.qza \
+      --i-taxonomy gg-taxonomy.qza \
+      --p-level 2 \
+      --o-collapsed-table collapsed_phyla_table.qza
+  qiime tools export \
+      --input-path collapsed_phyla_table.qza \
+      --output-path collapsed_phyla_table_18dph
+  biom convert -i collapsed_phyla_table_18dph/feature-table.biom -o collapsed_phyla_table_18dph.csv --to-tsv
+  cp collapsed_phyla_table_18dph.csv* /mnt/c/Users/ekunselman/MICROBIOME_SEQUENCING/
+
+mkdir LF/46dph/
+qiime feature-table filter-samples \
+    --i-table LF/LF-table.qza \
+    --m-metadata-file metadata.tsv \
+    --p-where "[days_post_hatch]='46'" \
+    --o-filtered-table LF/46dph/LF-46dph-table.qza
+qiime diversity core-metrics-phylogenetic \
+  --i-table LF/46dph/LF-46dph-table.qza \
+  --i-phylogeny tree.qza \
+  --p-sampling-depth 22180 \
+  --m-metadata-file metadata.tsv \
+  --output-dir LF/46dph/diversity-core-metrics-phylogenetic-22180
+# most abundant phyla
+  qiime taxa collapse \
+      --i-table LF/46dph/LF-46dph-table.qza \
+      --i-taxonomy gg-taxonomy.qza \
+      --p-level 2 \
+      --o-collapsed-table collapsed_phyla_table.qza
+  qiime tools export \
+      --input-path collapsed_phyla_table.qza \
+      --output-path collapsed_phyla_table_46dph
+  biom convert -i collapsed_phyla_table_46dph/feature-table.biom -o collapsed_phyla_table_46dph.csv --to-tsv
+  cp collapsed_phyla_table_46dph.csv* /mnt/c/Users/ekunselman/MICROBIOME_SEQUENCING/
+
+# stats
+qiime diversity adonis \
+  --i-distance-matrix LF/5dph/diversity-core-metrics-phylogenetic-22180/weighted_unifrac_distance_matrix.qza \
+  --m-metadata-file metadata.tsv \
+  --p-formula "treatment" \
+  --p-permutations 999 \
+  --o-visualization LF/5dph/adonis_weighted_unifrac_treatment.qzv #n.s.
+qiime diversity adonis \
+  --i-distance-matrix LF/5dph/diversity-core-metrics-phylogenetic-22180/unweighted_unifrac_distance_matrix.qza \
+  --m-metadata-file metadata.tsv \
+  --p-formula "treatment" \
+  --p-permutations 999 \
+  --o-visualization LF/5dph/adonis_unweighted_unifrac_treatment.qzv #n.s.
+qiime diversity adonis \
+  --i-distance-matrix LF/11dph/diversity-core-metrics-phylogenetic-22180/weighted_unifrac_distance_matrix.qza \
+  --m-metadata-file metadata.tsv \
+  --p-formula "treatment" \
+  --p-permutations 999 \
+  --o-visualization LF/11dph/adonis_weighted_unifrac_treatment.qzv #n.s.
+qiime diversity adonis \
+  --i-distance-matrix LF/11dph/diversity-core-metrics-phylogenetic-22180/unweighted_unifrac_distance_matrix.qza \
+  --m-metadata-file metadata.tsv \
+  --p-formula "treatment" \
+  --p-permutations 999 \
+  --o-visualization LF/11dph/adonis_unweighted_unifrac_treatment.qzv #p=0.027
+qiime diversity adonis \
+  --i-distance-matrix LF/18dph/diversity-core-metrics-phylogenetic-22180/weighted_unifrac_distance_matrix.qza \
+  --m-metadata-file metadata.tsv \
+  --p-formula "treatment" \
+  --p-permutations 999 \
+  --o-visualization LF/18dph/adonis_weighted_unifrac_treatment.qzv #p=0.025
+qiime diversity adonis \
+  --i-distance-matrix LF/18dph/diversity-core-metrics-phylogenetic-22180/unweighted_unifrac_distance_matrix.qza \
+  --m-metadata-file metadata.tsv \
+  --p-formula "treatment" \
+  --p-permutations 999 \
+  --o-visualization LF/18dph/adonis_unweighted_unifrac_treatment.qzv #n.s.
+qiime diversity adonis \
+  --i-distance-matrix LF/46dph/diversity-core-metrics-phylogenetic-22180/weighted_unifrac_distance_matrix.qza \
+  --m-metadata-file metadata.tsv \
+  --p-formula "treatment" \
+  --p-permutations 999 \
+  --o-visualization LF/46dph/adonis_weighted_unifrac_treatment.qzv #n.s.
+qiime diversity adonis \
+  --i-distance-matrix LF/46dph/diversity-core-metrics-phylogenetic-22180/unweighted_unifrac_distance_matrix.qza \
+  --m-metadata-file metadata.tsv \
+  --p-formula "treatment" \
+  --p-permutations 999 \
+  --o-visualization LF/46dph/adonis_unweighted_unifrac_treatment.qzv #n.s.
+
+# pairwise stats for significant results
+    qiime diversity beta-group-significance \
+      --i-distance-matrix LF/11dph/diversity-core-metrics-phylogenetic-22180/unweighted_unifrac_distance_matrix.qza \
+      --m-metadata-file metadata.tsv \
+      --m-metadata-column treatment \
+      --o-visualization LF/11dph/unweighted_unifrac_beta_group_sig.qzv \
+      --p-pairwise # none significant
+    qiime diversity beta-group-significance \
+      --i-distance-matrix LF/18dph/diversity-core-metrics-phylogenetic-22180/weighted_unifrac_distance_matrix.qza \
+      --m-metadata-file metadata.tsv \
+      --m-metadata-column treatment \
+      --o-visualization LF/18dph/weighted_unifrac_beta_group_sig.qzv \
+      --p-pairwise # none significant
+
+# LF over time
+# Volatility analysis
+qiime longitudinal volatility \
+  --m-metadata-file metadata.tsv \
+  --m-metadata-file LF/diversity-core-metrics-phylogenetic-22180/unweighted_unifrac_pcoa_results.qza \
+  --p-default-group-column treatment \
+  --p-state-column days_post_hatch \
+  --p-individual-id-column tank_number \
+  --o-visualization LF/unweighted_volatility.qzv
+qiime longitudinal volatility \
+  --m-metadata-file metadata.tsv \
+  --m-metadata-file LF/diversity-core-metrics-phylogenetic-22180/weighted_unifrac_pcoa_results.qza \
+  --p-default-group-column treatment \
+  --p-state-column days_post_hatch \
+  --p-individual-id-column tank_number \
+  --o-visualization LF/weighted_volatility.qzv
+qiime longitudinal linear-mixed-effects \
+  --m-metadata-file metadata.tsv \
+  --m-metadata-file LF/diversity-core-metrics-phylogenetic-22180/unweighted_unifrac_pcoa_results.qza \
+  --p-metric 'Axis 1' \
+  --p-group-columns treatment \
+  --p-state-column days_post_hatch \
+  --p-individual-id-column tank_number \
+  --o-visualization unweighted-linear-mixed-effects.qzv
+qiime longitudinal linear-mixed-effects \
+  --m-metadata-file metadata.tsv \
+  --m-metadata-file LF/diversity-core-metrics-phylogenetic-22180/weighted_unifrac_pcoa_results.qza \
+  --p-metric 'Axis 1' \
+  --p-group-columns treatment \
+  --p-state-column days_post_hatch \
+  --p-individual-id-column tank_number \
+  --o-visualization weighted-linear-mixed-effects.qzv
+
+# Differential Abundance Analysis with ANCOMBC2
+#scroll all the way down in visualizations to see positive and negative
+# subset features so that q value is less than 0.05
+
+# conduct a prevalence based filtering on each subset of samples used
+# first, want only taxa present in 10% of all LCW_LF samples
+qiime feature-table summarize \
+  --i-table LCW_LF/LCW_LF-table.qza \
+  --m-sample-metadata-file metadata.tsv \
+  --o-visualization LCW_LF/LCW_LF-table.qzv # 104 samples present in this subset
+
+# second, want only taxa present in 10% of all LCW_LF, 11 and 18 dph samples
+qiime feature-table summarize \
+  --i-table LCW_LF/11_18dph/LCW_LF-11_18-table.qza \
+  --m-sample-metadata-file metadata.tsv \
+  --o-visualization LCW_LF/11_18dph/LCW_LF-11_18-table.qzv # 63 samples present in this subset
+
+
+# !! --p-prevalence-cutoff is an option instead
+# 1) what significantly varies across treatment in either LCW or LF?
+
+# prevalence filter 10%
+qiime composition ancombc2 \
+  --i-table LCW_LF/LCW_LF-table.qza \
+  --m-metadata-file metadata.tsv \
+  --p-fixed-effects-formula treatment \
+  --p-reference-levels 'treatment::C' \
+  --p-prevalence-cutoff 0.1 \
+  --o-ancombc2-output LCW_LF/ancombc2-treatment-results.qza
+  # C is the intercept, which means everything is compared to it
+
+  qiime composition ancombc2-visualizer \
+  --i-data LCW_LF/ancombc2-treatment-results.qza \
+  --i-taxonomy gg-taxonomy.qza \
+  --o-visualization LCW_LF/ancombc2-treatment-barplot.qzv
+
+# prevalence filter 75%
+qiime composition ancombc2 \
+  --i-table LCW_LF/LCW_LF-table.qza \
+  --m-metadata-file metadata.tsv \
+  --p-fixed-effects-formula treatment \
+  --p-reference-levels 'treatment::C' \
+  --p-prevalence-cutoff 0.75 \
+  --o-ancombc2-output LCW_LF/ancombc2-treatment-0.75-results.qza
+  # C is the intercept, which means everything is compared to it
+
+  qiime composition ancombc2-visualizer \
+  --i-data LCW_LF/ancombc2-treatment-results.qza \
+  --i-taxonomy gg-taxonomy.qza \
+  --o-visualization LCW_LF/ancombc2-treatment-0.75-barplot.qzv
+  # no change
+
+# prevalence filter 95%
+qiime composition ancombc2 \
+  --i-table LCW_LF/LCW_LF-table.qza \
+  --m-metadata-file metadata.tsv \
+  --p-fixed-effects-formula treatment \
+  --p-reference-levels 'treatment::C' \
+  --p-prevalence-cutoff 0.95 \
+  --o-ancombc2-output LCW_LF/ancombc2-treatment-0.95-results.qza
+  # C is the intercept, which means everything is compared to it
+
+  qiime composition ancombc2-visualizer \
+  --i-data LCW_LF/ancombc2-treatment-results.qza \
+  --i-taxonomy gg-taxonomy.qza \
+  --o-visualization LCW_LF/ancombc2-treatment-0.95-barplot.qzv
+  # no change
+
+# 2) what significantly differs between sample types?
+qiime composition ancombc2 \
+  --i-table LCW_LF/11_18dph/LCW_LF-11_18-table.qza \
+  --m-metadata-file metadata.tsv \
+  --p-fixed-effects-formula sample_type \
+  --p-reference-levels 'sample_type::LCW' \
+  --p-prevalence-cutoff 0.1 \
+  --o-ancombc2-output LCW_LF/11_18dph/ancombc2-sampletype-results.qza
+
+   qiime composition ancombc2-visualizer \
+   --i-data LCW_LF/11_18dph/ancombc2-sampletype-results.qza \
+   --i-taxonomy gg-taxonomy.qza \
+   --o-visualization LCW_LF/11_18dph/ancombc2-sampletype-barplot.qzv
+
+qiime composition ancombc2 \
+  --i-table LCW_LF/11_18dph/LCW_LF-11_18-table.qza \
+  --m-metadata-file metadata.tsv \
+  --p-fixed-effects-formula sample_type \
+  --p-reference-levels 'sample_type::LCW' \
+  --p-prevalence-cutoff 0.75 \
+  --o-ancombc2-output LCW_LF/11_18dph/ancombc2-sampletype-0.75-results.qza
+
+   qiime composition ancombc2-visualizer \
+   --i-data LCW_LF/11_18dph/ancombc2-sampletype-results.qza \
+   --i-taxonomy gg-taxonomy.qza \
+   --o-visualization LCW_LF/11_18dph/ancombc2-sampletype-0.75-barplot.qzv
+   # no change
+
+qiime composition ancombc2 \
+  --i-table LCW_LF/11_18dph/LCW_LF-11_18-table.qza \
+  --m-metadata-file metadata.tsv \
+  --p-fixed-effects-formula sample_type \
+  --p-reference-levels 'sample_type::LCW' \
+  --p-prevalence-cutoff 0.95 \
+  --o-ancombc2-output LCW_LF/11_18dph/ancombc2-sampletype-0.95-results.qza
+
+   qiime composition ancombc2-visualizer \
+   --i-data LCW_LF/11_18dph/ancombc2-sampletype-results.qza \
+   --i-taxonomy gg-taxonomy.qza \
+   --o-visualization LCW_LF/11_18dph/ancombc2-sampletype-0.95-barplot.qzv
+   # no change
+
+# 3) what taxa significantly change over time in LF
+# need to run different analysis here, probably in R
+
+
+
+
+
+
+# songbird is too old now to accomodate the newer version of qiime .qza files.
+
+pip install deicode
+pip install qurro
+
+# run deicdoe rpca on LCW and LF samples
+qiime deicode rpca \
+    --i-table LCW_LF/LCW_LF-table.qza \
+    --p-min-feature-count 10 \
+    --p-min-sample-count 500 \
+    --o-biplot LCW_LF/deicode-ordination.qza \
+    --o-distance-matrix LCW_LF/deicode-distance.qza
+# generate biplot
+qiime emperor biplot \
+    --i-biplot LCW_LF/deicode-ordination.qza \
+    --m-sample-metadata-file metadata.tsv \
+    --m-feature-metadata-file gg-taxonomy.qza \
+    --o-visualization LCW_LF/deicode-biplot.qzv \
+    --p-number-of-features 8
+
+
+
+# Use Qurro to visualize differentials and export log ratio data
+# first export taxonomy
+qiime tools export \
+--input-path gg-taxonomy.qza \
+--output-path exported-taxonomy
+qiime qurro differential-plot \
+--i-ranks LCW_LF/songbird-differentials.qza \
+--i-table LCW_LF/LCW_LF-table.qza \
+--m-sample-metadata-file metadata.tsv \
+--m-feature-metadata-file exported-taxonomy/taxonomy.tsv \
+--verbose \
+--o-visualization LCW_LF/songbird_qurro_plot_w_taxonomy.qzv
+
+
+
+# differential abundance analysis with ancom-bc
+# don't forget to add sampling depth to these downstream analyses
+
+
+# Transferring data to R
+# move feature table, tree, taxonomy and metadata
+cp asv-table-taxa-sample-filt.qza* /mnt/c/Users/ekunselman/MICROBIOME_SEQUENCING/
+cp gg-taxonomy.qza* /mnt/c/Users/ekunselman/MICROBIOME_SEQUENCING/
+tree.qza
+metadata.tsv
+
+
+# location of files in directory: Ubuntu-24.04/home/ekunselman/qiime2_projects/WSB_Probiotic/
