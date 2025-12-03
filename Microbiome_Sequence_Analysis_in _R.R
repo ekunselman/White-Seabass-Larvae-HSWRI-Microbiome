@@ -367,7 +367,21 @@ tax_table(LF_merged) <- tax_table(taxtabgenus20)
 title = "Taxa Barplot: LF Across treatments"
 plot_bar(LF_merged, "treatment", fill = "genus20", title = title) + coord_flip()
 
-
+# Artemia
+ART<-subset_samples(rarefied_physeq, sample_type == "ART")
+ART<-subset_samples(ART, days_post_hatch %in% c("11", "18"))
+# transform to %
+ART = transform_sample_counts(ART, function(x) 100 * x/sum(x))
+# select top 20
+top20otus = names(sort(taxa_sums(ART), TRUE)[1:20])
+taxtab20 = cbind(tax_table(ART), family20 = NA)
+taxtab20[top20otus, "family20"] <- as(tax_table(ART)[top20otus, "Family"], 
+                                      "character")
+tax_table(ART) <- tax_table(taxtab20)
+# plot
+title = "Taxa Barplot: Artemia (MIC)"
+plot_bar(ART, "treatment", fill = "family20", title = title) + coord_flip()
+                              
 
 # Differential Abundance of LF over time -----
 
@@ -589,5 +603,6 @@ ids_to_remove <- c("LCW.C.5d.3", "LCW.C.5d.6", "LCW.C.5d.9",
 
 # Remove rows where 'ID' column matches any of the IDs in 'ids_to_remove'
 subset_metadata <- metadata[!metadata$sample.id %in% ids_to_remove, ]
+
 
 
