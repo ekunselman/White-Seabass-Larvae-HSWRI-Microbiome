@@ -273,6 +273,139 @@ cor.test(x=LF_alpha_diversity$days_post_hatch, y=LF_alpha_diversity$pielou, meth
 cor.test(x=LF_alpha_diversity$days_post_hatch, y=LF_alpha_diversity$Shannon, method = 'spearman')
 
 
+# Comparing all PROBIOTIC to NON probiotic treatments
+physeq_pro <- qza_to_phyloseq(features="asv-table-taxa-sample-filt.qza",
+                          tree="tree.qza",
+                          taxonomy="gg-taxonomy.qza",
+                          metadata= "metadata_pro.tsv")
+set.seed(6500) # For reproducibility
+rarefied_physeq_pro <- rarefy_even_depth(physeq_pro, sample.size = 22180, replace = FALSE, trimOTUs = TRUE)
+
+# LCW
+LCW<-subset_samples(rarefied_physeq_pro, sample_type == "LCW")
+sample_data(LCW)
+# make table with alpha diversity metrics
+LCW_alpha_diversity<- estimate_richness(LCW)
+LCW_alpha_diversity<- cbind(sample_data(LCW), LCW_alpha_diversity)
+LCW_evenness<- evenness(LCW, index = "pielou", zeroes=TRUE, detection=0)
+LCW_alpha_diversity<- cbind(LCW_alpha_diversity, LCW_evenness)
+
+# plot
+a<-ggplot(LCW_alpha_diversity, aes(x=probiotics, y=pielou))+
+  geom_boxplot()+
+  geom_point()+
+  facet_wrap(~days_post_hatch)
+b<-ggplot(LCW_alpha_diversity, aes(x=probiotics, y=Observed))+
+  geom_boxplot()+
+  geom_point()+
+  facet_wrap(~days_post_hatch)
+c<-ggplot(LCW_alpha_diversity, aes(x=probiotics, y=Shannon))+
+  geom_boxplot()+
+  geom_point()+
+  facet_wrap(~days_post_hatch)
+ggarrange(a, b, c,
+          ncol = 3, nrow = 1)
+
+#Statistics
+LCW_11_alpha_diversity <- subset(LCW_alpha_diversity, days_post_hatch == "11")
+kruskal.test(Observed ~ probiotics, LCW_11_alpha_diversity) #0.4386
+kruskal.test(pielou ~ probiotics, LCW_11_alpha_diversity) #0.2453
+kruskal.test(Shannon ~ probiotics, LCW_11_alpha_diversity) #0.3017
+LCW_18_alpha_diversity <- subset(LCW_alpha_diversity, days_post_hatch == "18")
+kruskal.test(Observed ~ probiotics, LCW_18_alpha_diversity) #0.2472
+kruskal.test(pielou ~ probiotics, LCW_18_alpha_diversity) #0.3545
+kruskal.test(Shannon ~ probiotics, LCW_18_alpha_diversity) #0.4179
+
+# LF
+LF<-subset_samples(rarefied_physeq_pro, sample_type == "LF")
+LF_pro<-subset_samples(LF, days_post_hatch != "1")
+# make table with alpha diversity metrics
+LF_alpha_diversity<- estimate_richness(LF_pro)
+LF_alpha_diversity<- cbind(sample_data(LF_pro), LF_alpha_diversity)
+LF_evenness<- evenness(LF_pro, index = "pielou", zeroes=TRUE, detection=0)
+LF_alpha_diversity<- cbind(LF_alpha_diversity, LF_evenness)
+
+# plot
+a<-ggplot(LF_alpha_diversity, aes(x=probiotics, y=pielou, fill = probiotics))+
+  geom_boxplot()+
+  geom_point()+
+  facet_wrap(~days_post_hatch)+
+  scale_fill_manual(values = c("#440154", "#29AF7FFF"))+
+  theme(legend.position = "none")
+b<-ggplot(LF_alpha_diversity, aes(x=probiotics, y=Observed, fill = probiotics))+
+  geom_boxplot()+
+  geom_point()+
+  facet_wrap(~days_post_hatch)+
+  scale_fill_manual(values = c("#440154", "#29AF7FFF"))+
+  theme(legend.position = "none")
+c<-ggplot(LF_alpha_diversity, aes(x=probiotics, y=Shannon, fill = probiotics))+
+  geom_boxplot()+
+  theme_bw()+
+  facet_wrap(~days_post_hatch)+
+  scale_fill_manual(values = c("#440154", "#29AF7FFF"))+
+  theme(legend.position = "none")+
+  ylab("Shannon Diversity")
+ggarrange(a, b, c,
+          ncol = 3, nrow = 1)
+
+#Statistics
+LF_5_alpha_diversity <- subset(LF_alpha_diversity, days_post_hatch == "5")
+kruskal.test(Observed ~ probiotics, LF_5_alpha_diversity) #0.40
+kruskal.test(pielou ~ probiotics, LF_5_alpha_diversity) #0.17
+kruskal.test(Shannon ~ probiotics, LF_5_alpha_diversity) #0.29
+LF_11_alpha_diversity <- subset(LF_alpha_diversity, days_post_hatch == "11")
+kruskal.test(Observed ~ probiotics, LF_11_alpha_diversity) #0.08
+kruskal.test(pielou ~ probiotics, LF_11_alpha_diversity) #0.48
+kruskal.test(Shannon ~ probiotics, LF_11_alpha_diversity) #0.16
+LF_18_alpha_diversity <- subset(LF_alpha_diversity, days_post_hatch == "18")
+kruskal.test(Observed ~ probiotics, LF_18_alpha_diversity) #0.25
+kruskal.test(pielou ~ probiotics, LF_18_alpha_diversity) #0.40
+kruskal.test(Shannon ~ probiotics, LF_18_alpha_diversity) #0.25
+LF_46_alpha_diversity <- subset(LF_alpha_diversity, days_post_hatch == "46")
+kruskal.test(Observed ~ probiotics, LF_46_alpha_diversity) #0.45
+kruskal.test(pielou ~ probiotics, LF_46_alpha_diversity) #0.04
+kruskal.test(Shannon ~ probiotics, LF_46_alpha_diversity) #0.03
+
+
+# plot all treatments over time
+LF<-subset_samples(rarefied_physeq_pro, sample_type == "LF")
+# make table with alpha diversity metrics
+LF_alpha_diversity<- estimate_richness(LF)
+LF_alpha_diversity<- cbind(sample_data(LF), LF_alpha_diversity)
+LF_evenness<- evenness(LF, index = "pielou", zeroes=TRUE, detection=0)
+LF_alpha_diversity<- cbind(LF_alpha_diversity, LF_evenness)
+ggplot(LF_alpha_diversity, aes(x=days_post_hatch, y=Shannon, color=probiotics)) +
+  stat_summary(geom="errorbar", fun.data=mean_se, width=1) +
+  stat_summary(geom="line", fun.data=mean_se, linewidth=1) +
+  stat_summary(geom="point", fun.data=mean_se) +
+  xlab("Days Post Hatch") +
+  ylab("Shannon Diversity") +
+  theme_bw()+
+  scale_color_viridis_d(name="Probiotic Treatment")
+ggplot(LF_alpha_diversity, aes(x=days_post_hatch, y=pielou, color=probiotics)) +
+  stat_summary(geom="errorbar", fun.data=mean_se, width=1) +
+  stat_summary(geom="line", fun.data=mean_se, linewidth=1) +
+  stat_summary(geom="point", fun.data=mean_se) +
+  xlab("Days Post Hatch") +
+  ylab("Evenness") +
+  theme_bw()+
+  scale_color_viridis_d(name="Probiotic Treatment")
+ggplot(LF_alpha_diversity, aes(x=days_post_hatch, y=Observed, color=probiotics)) +
+  stat_summary(geom="errorbar", fun.data=mean_se, width=1) +
+  stat_summary(geom="line", fun.data=mean_se, linewidth=1) +
+  stat_summary(geom="point", fun.data=mean_se) +
+  xlab("Days Post Hatch") +
+  ylab("Richness") +
+  theme_bw()+
+  scale_color_viridis_d(name="Probiotic Treatment")
+
+library(rstatix)
+kruskal.test(pielou ~ days_post_hatch, LF_alpha_diversity)
+dunn_test(LF_alpha_diversity, pielou ~ days_post_hatch, p.adjust.method = "BH")
+kruskal.test(Shannon ~ days_post_hatch, LF_alpha_diversity)
+dunn_test(LF_alpha_diversity, Shannon ~ days_post_hatch, p.adjust.method = "BH"
+
+
 # Taxa bar plots --------
 # in order to merge samples within treatments, better to have a numerical column for treatment
 # make this is metadata3
@@ -381,7 +514,6 @@ tax_table(ART) <- tax_table(taxtab20)
 # plot
 title = "Taxa Barplot: Artemia (MIC)"
 plot_bar(ART, "treatment", fill = "family20", title = title) + coord_flip()
-                              
 
 # Differential Abundance of LF over time -----
 
@@ -603,6 +735,5 @@ ids_to_remove <- c("LCW.C.5d.3", "LCW.C.5d.6", "LCW.C.5d.9",
 
 # Remove rows where 'ID' column matches any of the IDs in 'ids_to_remove'
 subset_metadata <- metadata[!metadata$sample.id %in% ids_to_remove, ]
-
 
 

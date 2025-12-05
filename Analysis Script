@@ -375,6 +375,30 @@ qiime diversity beta-group-significance \
   --p-method permdisp \
   --o-visualization LCW_LF/11_18dph/unweighted_unifrac_beta_group_disp.qzv
 
+# what if you merge the two probiotic treatments and control with rotifer treatment?
+# at 11 and 18 dph
+qiime diversity core-metrics-phylogenetic \
+  --i-table LCW_LF/11_18dph/LCW_LF-11_18-table.qza \
+  --i-phylogeny tree.qza \
+  --p-sampling-depth 22180 \
+  --m-metadata-file metadata_pro.tsv \
+  --output-dir LCW_LF/11_18dph/diversity-core-metrics-phylogenetic-22180-pro
+qiime tools view LCW_LF/11_18dph/diversity-core-metrics-phylogenetic-22180-pro/weighted_unifrac_emperor.qzv
+qiime tools view LCW_LF/11_18dph/diversity-core-metrics-phylogenetic-22180-pro/unweighted_unifrac_emperor.qzv
+qiime diversity adonis \
+  --i-distance-matrix LCW_LF/11_18dph/diversity-core-metrics-phylogenetic-22180-pro/weighted_unifrac_distance_matrix.qza \
+  --m-metadata-file metadata_pro.tsv \
+  --p-formula "sample_type+days_post_hatch+probiotics" \
+  --p-permutations 999 \
+  --o-visualization LCW_LF/11_18dph/adonis_weighted_unifrac_sampletype_dph_probiotics.qzv
+qiime diversity adonis \
+  --i-distance-matrix LCW_LF/11_18dph/diversity-core-metrics-phylogenetic-22180-pro/unweighted_unifrac_distance_matrix.qza \
+  --m-metadata-file metadata_pro.tsv \
+  --p-formula "sample_type+days_post_hatch+probiotics" \
+  --p-permutations 999 \
+  --o-visualization LCW_LF/11_18dph/adonis_unweighted_unifrac_sampletype_dph_probiotics.qzv
+
+
 # Within each sample type (LCW or LF), do samples vary by treatment?
 mkdir LCW/
 qiime feature-table filter-samples \
@@ -402,6 +426,29 @@ qiime diversity adonis \
   --p-formula "days_post_hatch+treatment" \
   --p-permutations 999 \
   --o-visualization LCW/adonis_unweighted_unifrac_dph_treatment.qzv
+
+# What about probiotic conditions merged and compared to control+rotifer merged?
+qiime diversity core-metrics-phylogenetic \
+  --i-table LCW/LCW-table.qza \
+  --i-phylogeny tree.qza \
+  --p-sampling-depth 22180 \
+  --m-metadata-file metadata_pro.tsv \
+  --output-dir LCW/diversity-core-metrics-phylogenetic-22180-pro
+qiime tools view LCW/diversity-core-metrics-phylogenetic-22180-pro/weighted_unifrac_emperor.qzv
+qiime tools view LCW/diversity-core-metrics-phylogenetic-22180-pro/unweighted_unifrac_emperor.qzv
+qiime diversity adonis \
+  --i-distance-matrix LCW/diversity-core-metrics-phylogenetic-22180-pro/weighted_unifrac_distance_matrix.qza \
+  --m-metadata-file metadata_pro.tsv \
+  --p-formula "days_post_hatch+probiotics" \
+  --p-permutations 999 \
+  --o-visualization LCW/adonis_weighted_unifrac_dph_probiotics.qzv
+qiime diversity adonis \
+  --i-distance-matrix LCW/diversity-core-metrics-phylogenetic-22180-pro/unweighted_unifrac_distance_matrix.qza \
+  --m-metadata-file metadata_pro.tsv \
+  --p-formula "days_post_hatch+probiotics" \
+  --p-permutations 999 \
+  --o-visualization LCW/adonis_unweighted_unifrac_dph_probiotics.qzv
+
 
 qiime diversity beta-group-significance \
     --i-distance-matrix LCW/diversity-core-metrics-phylogenetic-22180/weighted_unifrac_distance_matrix.qza \
@@ -437,6 +484,20 @@ qiime diversity adonis \
   --o-visualization LCW/11dph/adonis_unweighted_unifrac_dph_treatment.qzv
 qiime tools view LCW/11dph/adonis_unweighted_unifrac_dph_treatment.qzv
 
+# between probiotic and non-probiotic treated?
+qiime diversity core-metrics-phylogenetic \
+  --i-table LCW/11dph/LCW-11dph-table.qza \
+  --i-phylogeny tree.qza \
+  --p-sampling-depth 22180 \
+  --m-metadata-file metadata_pro.tsv \
+  --output-dir LCW/11dph/diversity-core-metrics-phylogenetic-2218-pro
+qiime diversity adonis \
+  --i-distance-matrix LCW/11dph/diversity-core-metrics-phylogenetic-2218-pro/unweighted_unifrac_distance_matrix.qza \
+  --m-metadata-file metadata_pro.tsv \
+  --p-formula "probiotics" \
+  --p-permutations 999 \
+  --o-visualization LCW/11dph/adonis_unweighted_unifrac_probiotics.qzv
+
 mkdir LCW/18dph
 qiime feature-table filter-samples \
   --i-table LCW/LCW-table.qza \
@@ -458,6 +519,19 @@ qiime diversity adonis \
 qiime tools view LCW/18dph/adonis_unweighted_unifrac_dph_treatment.qzv
 # still no - weighted unifrac significantly differs across treatment but unweighted unifrac does not
 
+# between probiotic and non-probiotic treated?
+qiime diversity core-metrics-phylogenetic \
+  --i-table LCW/18dph/LCW-18dph-table.qza \
+  --i-phylogeny tree.qza \
+  --p-sampling-depth 22180 \
+  --m-metadata-file metadata_pro.tsv \
+  --output-dir LCW/18dph/diversity-core-metrics-phylogenetic-2218-pro
+qiime diversity adonis \
+  --i-distance-matrix LCW/18dph/diversity-core-metrics-phylogenetic-2218-pro/unweighted_unifrac_distance_matrix.qza \
+  --m-metadata-file metadata_pro.tsv \
+  --p-formula "probiotics" \
+  --p-permutations 999 \
+  --o-visualization LCW/18dph/adonis_unweighted_unifrac_probiotics.qzv
 
 mkdir LF/
 qiime feature-table filter-samples \
@@ -548,8 +622,26 @@ qiime diversity core-metrics-phylogenetic \
   --p-sampling-depth 22180 \
   --m-metadata-file metadata.tsv \
   --output-dir LF/5dph/diversity-core-metrics-phylogenetic-22180
-qiime tools view LF/5dph/diversity-core-metrics-phylogenetic-22180/weighted_unifrac_emperor.qzv
-qiime tools view LF/5dph/diversity-core-metrics-phylogenetic-22180/unweighted_unifrac_emperor.qzv
+# what about all probiotic vs all non-probiotic?
+qiime diversity core-metrics-phylogenetic \
+  --i-table LF/5dph/LF-5dph-table.qza \
+  --i-phylogeny tree.qza \
+  --p-sampling-depth 22180 \
+  --m-metadata-file metadata_pro.tsv \
+  --output-dir LF/5dph/diversity-core-metrics-phylogenetic-22180-pro
+qiime diversity adonis \
+  --i-distance-matrix LF/5dph/diversity-core-metrics-phylogenetic-22180-pro/weighted_unifrac_distance_matrix.qza \
+  --m-metadata-file metadata_pro.tsv \
+  --p-formula "probiotics" \
+  --p-permutations 999 \
+  --o-visualization LF/5dph/adonis_weighted_probiotics.qzv
+qiime diversity adonis \
+  --i-distance-matrix LF/5dph/diversity-core-metrics-phylogenetic-22180-pro/unweighted_unifrac_distance_matrix.qza \
+  --m-metadata-file metadata_pro.tsv \
+  --p-formula "probiotics" \
+  --p-permutations 999 \
+  --o-visualization LF/5dph/adonis_unweighted_probiotics.qzv
+
 # most abundant phyla
 qiime taxa collapse \
     --i-table LF/5dph/LF-5dph-table.qza \
@@ -561,6 +653,8 @@ qiime tools export \
     --output-path collapsed_phyla_table_5dph
 biom convert -i collapsed_phyla_table_5dph/feature-table.biom -o collapsed_phyla_table_5dph.csv --to-tsv
 cp collapsed_phyla_table_5dph.csv* /mnt/c/Users/ekunselman/MICROBIOME_SEQUENCING/
+
+
 
 mkdir LF/11dph/
 qiime feature-table filter-samples \
@@ -576,6 +670,26 @@ qiime diversity core-metrics-phylogenetic \
   --output-dir LF/11dph/diversity-core-metrics-phylogenetic-22180
 qiime tools view LF/11dph/diversity-core-metrics-phylogenetic-22180/weighted_unifrac_emperor.qzv
 qiime tools view LF/11dph/diversity-core-metrics-phylogenetic-22180/unweighted_unifrac_emperor.qzv
+# what about all probiotic vs all non-probiotic?
+qiime diversity core-metrics-phylogenetic \
+  --i-table LF/11dph/LF-11dph-table.qza \
+  --i-phylogeny tree.qza \
+  --p-sampling-depth 22180 \
+  --m-metadata-file metadata_pro.tsv \
+  --output-dir LF/11dph/diversity-core-metrics-phylogenetic-22180-pro
+qiime diversity adonis \
+  --i-distance-matrix LF/11dph/diversity-core-metrics-phylogenetic-22180-pro/weighted_unifrac_distance_matrix.qza \
+  --m-metadata-file metadata_pro.tsv \
+  --p-formula "probiotics" \
+  --p-permutations 999 \
+  --o-visualization LF/11dph/adonis_weighted_probiotics.qzv
+qiime diversity adonis \
+  --i-distance-matrix LF/11dph/diversity-core-metrics-phylogenetic-22180-pro/unweighted_unifrac_distance_matrix.qza \
+  --m-metadata-file metadata_pro.tsv \
+  --p-formula "probiotics" \
+  --p-permutations 999 \
+  --o-visualization LF/11dph/adonis_unweighted_probiotics.qzv
+
 # most abundant phyla
 qiime taxa collapse \
     --i-table LF/11dph/LF-11dph-table.qza \
@@ -600,6 +714,26 @@ qiime diversity core-metrics-phylogenetic \
   --p-sampling-depth 22180 \
   --m-metadata-file metadata.tsv \
   --output-dir LF/18dph/diversity-core-metrics-phylogenetic-22180
+  # what about all probiotic vs all non-probiotic?
+  qiime diversity core-metrics-phylogenetic \
+    --i-table LF/18dph/LF-18dph-table.qza \
+    --i-phylogeny tree.qza \
+    --p-sampling-depth 22180 \
+    --m-metadata-file metadata_pro.tsv \
+    --output-dir LF/18dph/diversity-core-metrics-phylogenetic-22180-pro
+  qiime diversity adonis \
+    --i-distance-matrix LF/18dph/diversity-core-metrics-phylogenetic-22180-pro/weighted_unifrac_distance_matrix.qza \
+    --m-metadata-file metadata_pro.tsv \
+    --p-formula "probiotics" \
+    --p-permutations 999 \
+    --o-visualization LF/18dph/adonis_weighted_probiotics.qzv
+  qiime diversity adonis \
+    --i-distance-matrix LF/18dph/diversity-core-metrics-phylogenetic-22180-pro/unweighted_unifrac_distance_matrix.qza \
+    --m-metadata-file metadata_pro.tsv \
+    --p-formula "probiotics" \
+    --p-permutations 999 \
+    --o-visualization LF/18dph/adonis_unweighted_probiotics.qzv
+
 # most abundant phyla
   qiime taxa collapse \
       --i-table LF/18dph/LF-18dph-table.qza \
