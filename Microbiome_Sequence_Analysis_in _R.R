@@ -403,7 +403,7 @@ library(rstatix)
 kruskal.test(pielou ~ days_post_hatch, LF_alpha_diversity)
 dunn_test(LF_alpha_diversity, pielou ~ days_post_hatch, p.adjust.method = "BH")
 kruskal.test(Shannon ~ days_post_hatch, LF_alpha_diversity)
-dunn_test(LF_alpha_diversity, Shannon ~ days_post_hatch, p.adjust.method = "BH"
+dunn_test(LF_alpha_diversity, Shannon ~ days_post_hatch, p.adjust.method = "BH")
 
 
 # Taxa bar plots --------
@@ -515,6 +515,7 @@ tax_table(ART) <- tax_table(taxtab20)
 title = "Taxa Barplot: Artemia (MIC)"
 plot_bar(ART, "treatment", fill = "family20", title = title) + coord_flip()
 
+
 # Differential Abundance of LF over time -----
 
 # first need to generate tse from data
@@ -523,6 +524,456 @@ if (!requireNamespace("BiocManager", quietly = TRUE))
 BiocManager::install("mia")
 
 library(mia)
+
+# use LF phyloseq
+LF<-subset_samples(rarefied_physeq, sample_type == "LF")
+
+# convert to tse
+LF_tse <- makeTreeSummarizedExperimentFromPhyloseq(LF)
+
+# how many observations do we have per group?
+library(dplyr)
+library(knitr)
+count(as.data.frame(colData(LF_tse)), days_post_hatch) %>% kable()
+
+# Library Maaslin
+library(Maaslin2)
+
+# maaslin expects features as columns and samples as rows 
+# for both the asv/otu table as well as meta data 
+asv <- t(assay(tse))
+meta_data <- data.frame(colData(tse))
+
+Maaslin2(input_data = asv, 
+         input_metadata = meta_data, 
+         analysis_method = "LM",
+         normalization = "TSS",
+         min_prevalence = 0.95,
+         min_abundance = 1,
+         max_significance = 0.05,
+         transform = "LOG",
+         output = "outputTIME.95", 
+         fixed_effects = "days_post_hatch",
+         reference = "days_post_hatch,1")
+
+Maaslin2(input_data = asv, 
+         input_metadata = meta_data, 
+         analysis_method = "LM",
+         normalization = "TSS",
+         min_prevalence = 0.8,
+         min_abundance = 1,
+         max_significance = 0.05,
+         transform = "LOG",
+         output = "outputTIME.8", 
+         fixed_effects = "days_post_hatch",
+         reference = "days_post_hatch,1")
+
+Maaslin2(input_data = asv, 
+         input_metadata = meta_data, 
+         analysis_method = "LM",
+         normalization = "TSS",
+         min_prevalence = 0.75,
+         min_abundance = 1,
+         max_significance = 0.05,
+         transform = "LOG",
+         output = "outputTIME.75", 
+         fixed_effects = "days_post_hatch",
+         reference = "days_post_hatch,1")
+
+# honestly, should make the prevalence filter closer to .20 because then it would at least be present in almost all of one group
+# all of the default parameters were used (LM, TSS, LOG)
+
+# Try alternative normalization methods (CSS vs TMM)
+# also try inputting a non-rarefied phyloseq - only LF.P@.11d.11 is low sequence count (2,342)
+# Make LF phyloseq from non-rarefied data
+LF_unrarefied<-subset_samples(physeq, sample_type == "LF")
+
+# convert to tse
+LF_tse_unrarefied <- makeTreeSummarizedExperimentFromPhyloseq(LF_unrarefied)
+
+# how many observations do we have per group?
+count(as.data.frame(colData(LF_tse_unrarefied)), days_post_hatch) %>% kable()
+
+
+# Seems like a good idea to collapse at genus level 
+# https://www.nature.com/articles/s41467-022-28034-z
+# Agglomerate by genus
+LF_tse_unrarefied<-agglomerateByRank(LF_tse_unrarefied, rank = "Genus")
+
+# Try alternative analysis methods 
+# NEGBIN, ZINB because these are for count data 
+# - allows CSS and TMM normalization, but cannot use transform
+# LM on transformed data that is no longer count data
+# - allows TSS or CSS normalization, and use transform to get data into non count form
+
+# finally, setting prevalence filter at 0.5 because too many significant results otherwise
+
+asv <- t(assay(LF_tse_unrarefied))
+meta_data <- data.frame(colData(LF_tse_unrarefied))
+
+Maaslin2(input_data = asv, 
+         input_metadata = meta_data, 
+         analysis_method = "NEGBIN",
+         normalization = "CSS",
+         min_prevalence = 0.5,
+         min_abundance = 1,
+         max_significance = 0.05,
+         transform = "NONE",
+         output = "outputTIME.5.css.negbin", 
+         fixed_effects = "days_post_hatch",
+         reference = "days_post_hatch,1")
+
+Maaslin2(input_data = asv, 
+         input_metadata = meta_data, 
+         analysis_method = "NEGBIN",
+         normalization = "TMM",
+         min_prevalence = 0.5,
+         min_abundance = 1,
+         max_significance = 0.05,
+         transform = "NONE",
+         output = "outputTIME.5.tmm.negbin", 
+         fixed_effects = "days_post_hatch",
+         reference = "days_post_hatch,1")
+
+# convert counts to relative abundance
+LF_tse_unrarefied <- transformAssay(LF_tse_unrarefied, assay.type = "counts", method = "relabundance")
+asv <- t(assay(LF_tse_unrarefied))
+meta_data <- data.frame(colData(LF_tse_unrarefied))
+
+Maaslin2(input_data = asv, 
+         input_metadata = meta_data, 
+         analysis_method = "LM",
+         normalization = "TSS",
+         min_prevalence = 0.5,
+         min_abundance = 1,
+         max_significance = 0.05,
+         transform = "LOG",
+         output = "outputTIME.5.tss.lm", 
+         fixed_effects = "days_post_hatch",
+         reference = "days_post_hatch,1")
+
+Maaslin2(input_data = asv, 
+         input_metadata = meta_data, 
+         analysis_method = "LM",
+         normalization = "CLR",
+         min_prevalence = 0.5,
+         min_abundance = 1,
+         max_significance = 0.05,
+         transform = "LOG",
+         output = "outputtest", 
+         fixed_effects = "days_post_hatch",
+         reference = "days_post_hatch,1")
+
+# Default p adjustment is Benjamini-Hochberg
+
+# Differential Abundance of LF compared to LCW -----
+
+# argument for ancom-bc: https://www.nature.com/articles/s41522-020-00160-w
+if (!requireNamespace("BiocManager", quietly = TRUE))
+  install.packages("BiocManager")
+BiocManager::install("ANCOMBC")
+
+library(ANCOMBC)
+library(mia)
+library(dplyr)
+library(knitr)
+library(tidyverse)
+library(DT)
+
+# Use LF and LCW at 11 and 18 dph for even sample sizes
+LCW_LF_unrarefied<-subset_samples(physeq, sample_type != "ART")
+LCW_LF_11_18_unrarefied<-subset_samples(LCW_LF_unrarefied, days_post_hatch %in% c("11", "18"))
+
+# remove unassigned taxa
+LCW_LF_11_18_unrarefied_filtered <- subset_taxa(LCW_LF_11_18_unrarefied, Kingdom != "Unassigned")
+
+# make tse
+LCW_LF_11_18_tse <- makeTreeSummarizedExperimentFromPhyloseq(LCW_LF_11_18_unrarefied_filtered)
+count(as.data.frame(colData(LCW_LF_11_18_tse)), sample_type) %>% kable()
+
+# run ANCOM-BC2
+ancomSampleType <- ancombc2(
+  data = LCW_LF_11_18_tse,
+  tax_level="Genus",
+  fix_formula = "sample_type",
+  p_adj_method = "fdr", #equivalent to BH
+  prv_cut = 0.5,
+  lib_cut = 100, 
+  group = "sample_type", 
+  struc_zero = TRUE, # true when group is categorical
+  neg_lb = TRUE, # only true if struc zero is true
+  iter_control = list(tol = 1e-5, max_iter = 100, verbose = FALSE),
+  em_control = list(tol = 1e-5, max_iter = 100), # use max_iter >= 100 on real data 
+  alpha = 0.05
+)
+
+# look at structural zeros
+tab_zero = ancomSampleType$zero_ind
+tab_zero %>%
+  datatable(caption = "The detection of structural zeros")
+
+#primary analysis
+res = ancomSampleType$res # LCW seems to be intercept and LF is variable of interest
+
+#plot 
+
+res<-filter(res, diff_sample_typeLF == TRUE) #filter to significant results
+df_fig = res %>% 
+  dplyr::arrange(desc(lfc_sample_typeLF)) %>%
+  dplyr::mutate(direct = ifelse(lfc_sample_typeLF> 0, "Positive LFC", "Negative LFC"))
+
+df_fig$direct = factor(df_fig$direct, 
+                       levels = c("Positive LFC", "Negative LFC"))
+#plot
+ggplot(df_fig, aes(x = reorder(taxon, lfc_sample_typeLF), y = lfc_sample_typeLF, fill = direct, color = direct)) + 
+  geom_bar(stat = "identity", width = 0.7, color = "black", 
+           position = position_dodge(width = 0.4)) +
+  geom_errorbar(aes(ymin = lfc_sample_typeLF - se_sample_typeLF, ymax = lfc_sample_typeLF + se_sample_typeLF), 
+                width = 0.2, position = position_dodge(0.05), color = "black") + 
+  labs(x = NULL, y = "Log fold change", 
+       title = "Log fold changes for LF compared to LCW") + 
+  scale_fill_manual(values = c("blue", "orange")) +
+  theme_bw() + 
+  theme(plot.title = element_text(hjust = 0.5),
+        panel.grid.minor.y = element_blank(),
+        axis.text.x = element_text(angle = 60, hjust = 1))+ coord_flip()
+
+
+# Differential Abundance between probiotic treated or untreated conditions -----
+
+library(ANCOMBC)
+library(mia)
+library(dplyr)
+library(knitr)
+library(tidyverse)
+library(DT)
+
+library(qiime2R)
+library(phyloseq)
+physeq_pro <- qza_to_phyloseq(features="asv-table-taxa-sample-filt.qza",
+                              tree="tree.qza",
+                              taxonomy="gg-taxonomy.qza",
+                              metadata="metadata_pro.tsv")
+
+# LCW 11 dph (unrarefied phyloseq)
+LCW_unrarefied<-subset_samples(physeq_pro, sample_type == "LCW")
+LCW_11_unrarefied<-subset_samples(LCW_unrarefied, days_post_hatch == "11")
+
+# remove unassigned taxa
+LCW_11_unrarefied_filtered <- subset_taxa(LCW_11_unrarefied, Kingdom != "Unassigned")
+
+# make tse
+LCW_11_tse <- makeTreeSummarizedExperimentFromPhyloseq(LCW_11_unrarefied_filtered)
+count(as.data.frame(colData(LCW_11_tse)), probiotics) %>% kable()
+
+# run ANCOM-BC2
+ancomProbiotics <- ancombc2(
+  data = LCW_11_tse,
+  tax_level="Genus",
+  fix_formula = "probiotics",
+  p_adj_method = "fdr", #equivalent to BH
+  prv_cut = 0.5,
+  lib_cut = 100, 
+  group = "probiotics", 
+  struc_zero = TRUE, # true when group is categorical
+  neg_lb = TRUE, # only true if struc zero is true
+  iter_control = list(tol = 1e-5, max_iter = 100, verbose = FALSE),
+  em_control = list(tol = 1e-5, max_iter = 100), # use max_iter >= 100 on real data 
+  alpha = 0.05
+)
+
+# look at structural zeros
+tab_zero = ancomProbiotics$zero_ind
+tab_zero %>%
+  datatable(caption = "The detection of structural zeros")
+
+#primary analysis
+res = ancomProbiotics$res 
+
+#plot 
+
+res<-filter(res, diff_probioticsprobiotic == TRUE) #filter to significant results
+df_fig = res %>% 
+  dplyr::arrange(desc(lfc_probioticsprobiotic)) %>%
+  dplyr::mutate(direct = ifelse(lfc_probioticsprobiotic> 0, "Positive LFC", "Negative LFC"))
+
+df_fig$direction = factor(df_fig$direct, 
+                          levels = c("Positive LFC", "Negative LFC"))
+#plot
+ggplot(df_fig, aes(x = reorder(taxon, lfc_probioticsprobiotic), y = lfc_probioticsprobiotic, fill = direction, color = direction)) + 
+  geom_bar(stat = "identity", width = 0.7, color = "black", 
+           position = position_dodge(width = 0.4)) +
+  geom_errorbar(aes(ymin = lfc_probioticsprobiotic - se_probioticsprobiotic, ymax = lfc_probioticsprobiotic + se_probioticsprobiotic), 
+                width = 0.2, position = position_dodge(0.05), color = "black") + 
+  labs(x = NULL, y = "Log fold change", 
+       title = "Log fold changes with Probiotics") + 
+  scale_fill_manual(values = c("#29AF7FFF", "purple")) +
+  theme_bw() + 
+  theme(plot.title = element_text(hjust = 0.5),
+        panel.grid.minor.y = element_blank(),
+        axis.text.x = element_text(angle = 60, hjust = 1))+ coord_flip()
+
+
+
+# LF 11 dph (unrarefied phyloseq)
+LF_unrarefied<-subset_samples(physeq_pro, sample_type == "LF")
+LF_11_unrarefied<-subset_samples(LF_unrarefied, days_post_hatch == "11")
+
+# remove unassigned taxa
+LF_11_unrarefied_filtered <- subset_taxa(LF_11_unrarefied, Kingdom != "Unassigned")
+
+# make tse
+LF_11_tse <- makeTreeSummarizedExperimentFromPhyloseq(LF_11_unrarefied_filtered)
+count(as.data.frame(colData(LF_11_tse)), probiotics) %>% kable()
+
+# run ANCOM-BC2
+ancomProbiotics <- ancombc2(
+  data = LF_11_tse,
+  tax_level="Genus",
+  fix_formula = "probiotics",
+  p_adj_method = "fdr", #equivalent to BH
+  prv_cut = 0.5,
+  lib_cut = 100, 
+  group = "probiotics", 
+  struc_zero = TRUE, # true when group is categorical
+  neg_lb = TRUE, # only true if struc zero is true
+  iter_control = list(tol = 1e-5, max_iter = 100, verbose = FALSE),
+  em_control = list(tol = 1e-5, max_iter = 100), # use max_iter >= 100 on real data 
+  alpha = 0.05
+)
+
+# look at structural zeros
+tab_zero = ancomProbiotics$zero_ind
+tab_zero %>%
+  datatable(caption = "The detection of structural zeros")
+
+#primary analysis
+res = ancomProbiotics$res 
+
+res<-filter(res, diff_probioticsprobiotic == TRUE) #filter to significant results
+# no significantly different features
+
+
+# LF 18 dph (unrarefied phyloseq)
+LF_unrarefied<-subset_samples(physeq_pro, sample_type == "LF")
+LF_18_unrarefied<-subset_samples(LF_unrarefied, days_post_hatch == "18")
+
+# remove unassigned taxa
+LF_18_unrarefied_filtered <- subset_taxa(LF_18_unrarefied, Kingdom != "Unassigned")
+
+# make tse
+LF_18_tse <- makeTreeSummarizedExperimentFromPhyloseq(LF_18_unrarefied_filtered)
+count(as.data.frame(colData(LF_18_tse)), probiotics) %>% kable()
+
+# run ANCOM-BC2
+ancomProbiotics <- ancombc2(
+  data = LF_18_tse,
+  tax_level="Genus",
+  fix_formula = "probiotics",
+  p_adj_method = "fdr", #equivalent to BH
+  prv_cut = 0.5,
+  lib_cut = 100, 
+  group = "probiotics", 
+  struc_zero = TRUE, # true when group is categorical
+  neg_lb = TRUE, # only true if struc zero is true
+  iter_control = list(tol = 1e-5, max_iter = 100, verbose = FALSE),
+  em_control = list(tol = 1e-5, max_iter = 100), # use max_iter >= 100 on real data 
+  alpha = 0.05
+)
+
+# look at structural zeros
+tab_zero = ancomProbiotics$zero_ind
+tab_zero %>%
+  datatable(caption = "The detection of structural zeros")
+
+#primary analysis
+res = ancomProbiotics$res 
+
+#plot 
+
+res<-filter(res, diff_probioticsprobiotic == TRUE) #filter to significant results
+df_fig = res %>% 
+  dplyr::arrange(desc(lfc_probioticsprobiotic)) %>%
+  dplyr::mutate(direct = ifelse(lfc_probioticsprobiotic> 0, "Positive LFC", "Negative LFC"))
+
+df_fig$direction = factor(df_fig$direct, 
+                          levels = c("Positive LFC", "Negative LFC"))
+#plot
+ggplot(df_fig, aes(x = reorder(taxon, lfc_probioticsprobiotic), y = lfc_probioticsprobiotic, fill = direction, color = direction)) + 
+  geom_bar(stat = "identity", width = 0.7, color = "black", 
+           position = position_dodge(width = 0.4)) +
+  geom_errorbar(aes(ymin = lfc_probioticsprobiotic - se_probioticsprobiotic, ymax = lfc_probioticsprobiotic + se_probioticsprobiotic), 
+                width = 0.2, position = position_dodge(0.05), color = "black") + 
+  labs(x = NULL, y = "Log fold change", 
+       title = "Log fold changes with Probiotics") + 
+  scale_fill_manual(values = c("#29AF7FFF", "purple")) +
+  theme_bw() + 
+  theme(plot.title = element_text(hjust = 0.5),
+        panel.grid.minor.y = element_blank(),
+        axis.text.x = element_text(angle = 60, hjust = 1))+ coord_flip()
+
+
+
+# LF, LCW and 11, 18dph diff abundance
+# LCW 11 dph (unrarefied phyloseq)
+LCW_LF_unrarefied<-subset_samples(physeq_pro, sample_type != "ART")
+LCW_LF_11_18_unrarefied<-subset_samples(LCW_LF_unrarefied, days_post_hatch %in% c("11", "18"))
+
+# remove unassigned taxa
+LCW_LF_11_18_unrarefied_filtered <- subset_taxa(LCW_LF_11_18_unrarefied, Kingdom != "Unassigned")
+
+# make tse
+LCW_LF_11_18_tse <- makeTreeSummarizedExperimentFromPhyloseq(LCW_LF_11_18_unrarefied_filtered)
+count(as.data.frame(colData(LCW_LF_11_18_tse)), probiotics) %>% kable()
+
+# run ANCOM-BC2
+ancomProbiotics <- ancombc2(
+  data = LCW_LF_11_18_tse,
+  tax_level="Genus",
+  fix_formula = "probiotics",
+  p_adj_method = "fdr", #equivalent to BH
+  prv_cut = 0.5,
+  lib_cut = 100, 
+  group = "probiotics", 
+  struc_zero = TRUE, # true when group is categorical
+  neg_lb = TRUE, # only true if struc zero is true
+  iter_control = list(tol = 1e-5, max_iter = 100, verbose = FALSE),
+  em_control = list(tol = 1e-5, max_iter = 100), # use max_iter >= 100 on real data 
+  alpha = 0.05
+)
+
+# look at structural zeros
+tab_zero = ancomProbiotics$zero_ind
+tab_zero %>%
+  datatable(caption = "The detection of structural zeros")
+
+#primary analysis
+res = ancomProbiotics$res 
+
+#plot 
+
+res<-filter(res, diff_probioticsprobiotic == TRUE) #filter to significant results
+df_fig = res %>% 
+  dplyr::arrange(desc(lfc_probioticsprobiotic)) %>%
+  dplyr::mutate(direct = ifelse(lfc_probioticsprobiotic> 0, "Positive LFC", "Negative LFC"))
+
+df_fig$direction = factor(df_fig$direct, 
+                          levels = c("Positive LFC", "Negative LFC"))
+#plot
+ggplot(df_fig, aes(x = reorder(taxon, lfc_probioticsprobiotic), y = lfc_probioticsprobiotic, fill = direction, color = direction)) + 
+  geom_bar(stat = "identity", width = 0.7, color = "black", 
+           position = position_dodge(width = 0.4)) +
+  geom_errorbar(aes(ymin = lfc_probioticsprobiotic - se_probioticsprobiotic, ymax = lfc_probioticsprobiotic + se_probioticsprobiotic), 
+                width = 0.2, position = position_dodge(0.05), color = "black") + 
+  labs(x = NULL, y = "Log fold change", 
+       title = "Log fold changes with Probiotics") + 
+  scale_fill_manual(values = c("#29AF7FFF", "purple")) +
+  theme_bw() + 
+  theme(plot.title = element_text(hjust = 0.5),
+        panel.grid.minor.y = element_blank(),
+        axis.text.x = element_text(angle = 60, hjust = 1))+ coord_flip()
+
+
 
 
 # Venn Diagram -----
