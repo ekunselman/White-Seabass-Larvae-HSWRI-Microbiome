@@ -1,0 +1,1326 @@
+# Microbiome Analysis in R
+# WSB Probiotic Microbiome
+
+setwd("~/Probiotics/WSB 2024/data")
+
+# view metadata as needed
+metadata <- read.delim("~/Probiotics/WSB 2024/data/metadata.tsv")
+View(metadata)
+
+# install and load qiime2R
+if (!requireNamespace("devtools", quietly = TRUE)){install.packages("devtools")}
+devtools::install_github("jbisanz/qiime2R")
+
+library(qiime2R)
+
+#Import qiime2 objects as phyloseq object
+
+# phyloseq
+physeq <- qza_to_phyloseq(features="asv-table-taxa-sample-filt.qza",
+                          tree="tree.qza",
+                          taxonomy="gg-taxonomy.qza",
+                          metadata= "metadata.tsv")
+
+if (!require("BiocManager", quietly = TRUE))
+  install.packages("BiocManager")
+BiocManager::install("phyloseq")
+library(phyloseq)
+
+# generate rarefaction curves per sample
+tab <- otu_table(physeq)
+class(tab) <- "matrix" # as.matrix() will do nothing
+## you get a warning here, but this is what we need to have
+tab <- t(tab) # transpose observations to rows
+library(vegan)
+rare <- rarecurve(tab, step=1000, ylab="ASV richness", label = F, xlim = c(0, 50000))
+abline(v = 22180, col = "red", lwd = 2, lty = 2)
+
+library(vegan)
+
+rarecurve(t(otu_table(physeq)), step=50, cex=0.5)
+library(ggplot2)
+
+# Rarefy data
+hist(sample_sums(physeq), main="Distribution of Sample Read Counts", xlab="Total Reads per Sample")
+
+set.seed(6500) # For reproducibility
+rarefied_physeq <- rarefy_even_depth(physeq, sample.size = 22180, replace = FALSE, trimOTUs = TRUE)
+
+
+### Alpha Diversity ----------
+
+if (!require("BiocManager", quietly = TRUE))
+  install.packages("BiocManager")
+BiocManager::install("microbiome")
+
+install.packages("ggpubr")
+
+library(microbiome)
+library(ggpubr)
+library(ggplot2)
+
+# LCW_LF @ 11 and 18 dph
+
+LCW_LF<-subset_samples(rarefied_physeq, sample_type != "ART")
+LCW_LF_11_18<-subset_samples(LCW_LF, days_post_hatch %in% c("11", "18"))
+sample_data(LCW_LF_11_18)
+
+plot_richness(LCW_LF_11_18, color = "sample_type", x = "sample_type", 
+              measures = c("Observed", "Chao1", "Shannon", "Simpson"))
+# make table with alpha diversity metrics
+LCW_LF_11_18_alpha_diversity<- estimate_richness(LCW_LF_11_18)
+LCW_LF_11_18_alpha_diversity<- cbind(sample_data(LCW_LF_11_18), LCW_LF_11_18_alpha_diversity)
+LCW_LF_11_18_evenness<- evenness(LCW_LF_11_18, index = "pielou", zeroes=TRUE, detection=0)
+LCW_LF_11_18_alpha_diversity<- cbind(LCW_LF_11_18_alpha_diversity, LCW_LF_11_18_evenness)
+
+# plot
+a<-ggplot(LCW_LF_11_18_alpha_diversity, aes(x=sample_type, y=pielou))+
+  geom_boxplot()
+b<-ggplot(LCW_LF_11_18_alpha_diversity, aes(x=sample_type, y=Observed))+
+  geom_boxplot()
+c<-ggplot(LCW_LF_11_18_alpha_diversity, aes(x=sample_type, y=Shannon))+
+  geom_boxplot()
+ggarrange(a, b, c,
+          ncol = 3, nrow = 1)
+a<-ggplot(LCW_LF_11_18_alpha_diversity, aes(x=sample_type, y=pielou))+
+  geom_boxplot()+
+  facet_wrap(~days_post_hatch)
+b<-ggplot(LCW_LF_11_18_alpha_diversity, aes(x=sample_type, y=Observed))+
+  geom_boxplot()+
+  facet_wrap(~days_post_hatch)
+c<-ggplot(LCW_LF_11_18_alpha_diversity, aes(x=sample_type, y=Shannon))+
+  geom_boxplot()+
+  facet_wrap(~days_post_hatch)
+ggarrange(a, b, c,
+          ncol = 3, nrow = 1)
+
+# Statistics
+kruskal.test(Observed ~ sample_type, LCW_LF_11_18_alpha_diversity)
+kruskal.test(pielou ~ sample_type, LCW_LF_11_18_alpha_diversity)
+kruskal.test(Shannon~ sample_type, LCW_LF_11_18_alpha_diversity)
+
+
+# LCW
+LCW<-subset_samples(rarefied_physeq, sample_type == "LCW")
+sample_data(LCW)
+# make table with alpha diversity metrics
+LCW_alpha_diversity<- estimate_richness(LCW)
+LCW_alpha_diversity<- cbind(sample_data(LCW), LCW_alpha_diversity)
+LCW_evenness<- evenness(LCW, index = "pielou", zeroes=TRUE, detection=0)
+LCW_alpha_diversity<- cbind(LCW_alpha_diversity, LCW_evenness)
+
+# plot
+a<-ggplot(LCW_alpha_diversity, aes(x=treatment, y=pielou))+
+  geom_boxplot()+
+  geom_point()+
+  facet_wrap(~days_post_hatch)
+b<-ggplot(LCW_alpha_diversity, aes(x=treatment, y=Observed))+
+  geom_boxplot()+
+  geom_point()+
+  facet_wrap(~days_post_hatch)
+c<-ggplot(LCW_alpha_diversity, aes(x=treatment, y=Shannon))+
+  geom_boxplot()+
+  geom_point()+
+  facet_wrap(~days_post_hatch)
+ggarrange(a, b, c,
+          ncol = 3, nrow = 1)
+
+d<-ggplot(LCW_alpha_diversity, aes(x=treatment, y=pielou))+
+  geom_boxplot()
+e<-ggplot(LCW_alpha_diversity, aes(x=treatment, y=Observed))+
+  geom_boxplot()
+f<-ggplot(LCW_alpha_diversity, aes(x=treatment, y=Shannon))+
+  geom_boxplot()
+ggarrange(d, e, f,
+          ncol = 1, nrow = 3)
+
+#Statistics
+kruskal.test(Observed ~ treatment, LCW_alpha_diversity)
+kruskal.test(pielou ~ treatment, LCW_alpha_diversity)
+kruskal.test(Shannon ~ treatment, LCW_alpha_diversity)
+
+
+# LF
+LF<-subset_samples(rarefied_physeq, sample_type == "LF")
+sample_data(LF)
+# make table with alpha diversity metrics
+LF_alpha_diversity<- estimate_richness(LF)
+LF_alpha_diversity<- cbind(sample_data(LF), LF_alpha_diversity)
+LF_evenness<- evenness(LF, index = "pielou", zeroes=TRUE, detection=0)
+LF_alpha_diversity<- cbind(LF_alpha_diversity, LF_evenness)
+
+# mean values per days post hatch
+library(dplyr)
+LF_alpha_diversity %>%
+  group_by(days_post_hatch) %>%
+  summarise(mean_value = mean(Observed))
+
+LF_alpha_diversity %>%
+  group_by(days_post_hatch) %>%
+  summarise(mean_value = mean(Shannon))
+
+# plot
+a<-ggplot(LF_alpha_diversity, aes(x=treatment, y=pielou))+
+  geom_boxplot()+
+  geom_point()+
+  facet_wrap(~days_post_hatch)
+b<-ggplot(LF_alpha_diversity, aes(x=treatment, y=Observed))+
+  geom_boxplot()+
+  geom_point()+
+  facet_wrap(~days_post_hatch)
+c<-ggplot(LF_alpha_diversity, aes(x=treatment, y=Shannon))+
+  geom_boxplot()+
+  geom_point()+
+  facet_wrap(~days_post_hatch)
+ggarrange(a, b, c,
+          ncol = 3, nrow = 1)
+
+d<-ggplot(LF_alpha_diversity, aes(x=days_post_hatch, y=pielou))+
+  geom_point()+
+  geom_smooth(method = "lm", se = FALSE)+
+  facet_wrap(~treatment)
+e<-ggplot(LF_alpha_diversity, aes(x=days_post_hatch, y=Observed))+
+  geom_point()+
+  geom_smooth(method = "lm", se = FALSE)+
+  facet_wrap(~treatment)
+f<-ggplot(LF_alpha_diversity, aes(x=days_post_hatch, y=Shannon))+
+  geom_point()+
+  geom_smooth(method = "lm", se = FALSE)+
+  facet_wrap(~treatment)
+ggarrange(d, e, f,
+          ncol = 3, nrow = 1)
+
+g<-ggplot(LF_alpha_diversity, aes(x=treatment, y=pielou))+
+  geom_boxplot()
+h<-ggplot(LF_alpha_diversity, aes(x=treatment, y=Observed))+
+  geom_boxplot()
+i<-ggplot(LF_alpha_diversity, aes(x=treatment, y=Shannon))+
+  geom_boxplot()
+ggarrange(g, h, i,
+          ncol = 1, nrow = 3)
+
+j<-ggplot(LF_alpha_diversity, aes(x=days_post_hatch, y=pielou))+
+  geom_point()+
+  geom_smooth(method = "lm", se = FALSE)
+k<-ggplot(LF_alpha_diversity, aes(x=days_post_hatch, y=Observed))+
+  geom_point()+
+  geom_smooth(method = "lm", se = FALSE)
+l<-ggplot(LF_alpha_diversity, aes(x=days_post_hatch, y=Shannon))+
+  geom_point()+
+  geom_smooth(method = "lm", se = FALSE)
+ggarrange(j, k, l,
+          ncol = 3, nrow = 1)
+
+# plot all treatments over time
+ggplot(LF_alpha_diversity, aes(x=days_post_hatch, y=Shannon, color=treatment)) +
+  stat_summary(geom="errorbar", fun.data=mean_se, width=1) +
+  stat_summary(geom="line", fun.data=mean_se, linewidth=1) +
+  stat_summary(geom="point", fun.data=mean_se) +
+  xlab("Days Post Hatch") +
+  ylab("Shannon Diversity") +
+  theme_bw()+
+  scale_color_viridis_d(name="Treatment")
+ggplot(LF_alpha_diversity, aes(x=days_post_hatch, y=pielou, color=treatment)) +
+  stat_summary(geom="errorbar", fun.data=mean_se, width=1) +
+  stat_summary(geom="line", fun.data=mean_se, linewidth=1) +
+  stat_summary(geom="point", fun.data=mean_se) +
+  xlab("Days Post Hatch") +
+  ylab("Evenness") +
+  theme_bw()+
+  scale_color_viridis_d(name="Treatment")
+ggplot(LF_alpha_diversity, aes(x=days_post_hatch, y=Observed, color=treatment)) +
+  stat_summary(geom="errorbar", fun.data=mean_se, width=1) +
+  stat_summary(geom="line", fun.data=mean_se, linewidth=1) +
+  stat_summary(geom="point", fun.data=mean_se) +
+  xlab("Days Post Hatch") +
+  ylab("Richness") +
+  theme_bw()+
+  scale_color_viridis_d(name="Treatment")
+
+#Statistics
+kruskal.test(Observed ~ treatment, LF_alpha_diversity)
+kruskal.test(pielou ~ treatment, LF_alpha_diversity)
+kruskal.test(Shannon ~ treatment, LF_alpha_diversity)
+
+library(rstatix)
+kruskal.test(Observed ~ days_post_hatch, LF_alpha_diversity)
+dunn_test(LF_alpha_diversity, Observed ~ days_post_hatch, p.adjust.method = "BH")
+kruskal.test(pielou ~ days_post_hatch, LF_alpha_diversity)
+dunn_test(LF_alpha_diversity, pielou ~ days_post_hatch, p.adjust.method = "BH")
+kruskal.test(Shannon ~ days_post_hatch, LF_alpha_diversity)
+dunn_test(LF_alpha_diversity, Shannon ~ days_post_hatch, p.adjust.method = "BH")
+
+# REMOVE rotifer treatment and just compare control to probiotics
+LF_alpha_diversity_rm <- subset(LF_alpha_diversity, treatment != "R")
+#plot
+ggplot(LF_alpha_diversity_rm, aes(x=days_post_hatch, y=Shannon, color=treatment)) +
+  stat_summary(geom="errorbar", fun.data=mean_se, width=1) +
+  stat_summary(geom="line", fun.data=mean_se, linewidth=1) +
+  stat_summary(geom="point", fun.data=mean_se) +
+  xlab("Days Post Hatch") +
+  ylab("Shannon Diversity") +
+  theme_bw()+
+  scale_color_viridis_d(name="Treatment")
+
+# Linear model for days post hatch
+# a linear model is used because time is treated as a fixed effect and diversity as response
+# https://libguides.princeton.edu/R-linear_regression
+
+dph_lm_pielou<-lm(pielou ~ days_post_hatch, data = LF_alpha_diversity)
+summary(dph_lm_pielou)
+# robust regression
+library(lmtest)
+library(sandwich)
+dph_lm_pielou$robse <- vcovHC(dph_lm_pielou, type="HC1")
+coeftest(dph_lm_pielou,dph_lm_pielou$robse)
+#normality check
+shapiro.test(LF_alpha_diversity$pielou) #normal
+library(car)
+qqPlot(dph_lm_pielou) #2 outliers
+ncvTest(dph_lm_pielou) #heteroscedastic
+residualPlots(dph_lm_pielou) #bad 
+# test normality
+
+dph_lm_shannon<-lm(Shannon ~ days_post_hatch, data = LF_alpha_diversity)
+summary(dph_lm_shannon)
+dph_lm_shannon$robse <- vcovHC(dph_lm_shannon, type="HC1")
+coeftest(dph_lm_shannon, dph_lm_pielou$robse)
+shapiro.test(LF_alpha_diversity$Shannon) #normal
+qqPlot(dph_lm_shannon) #2 outliers
+ncvTest(dph_lm_shannon) #heteroscedastic
+residualPlots(dph_lm_shannon) # curved - not good
+
+
+# test for homogeneity of variance
+bartlett.test(pielou ~ days_post_hatch, data = LF_alpha_diversity) #not equal variance
+bartlett.test(Shannon ~ days_post_hatch, data = LF_alpha_diversity) #not equal variance
+
+cor.test(x=LF_alpha_diversity$days_post_hatch, y=LF_alpha_diversity$Observed, method = 'spearman')
+cor.test(x=LF_alpha_diversity$days_post_hatch, y=LF_alpha_diversity$pielou, method = 'spearman')
+cor.test(x=LF_alpha_diversity$days_post_hatch, y=LF_alpha_diversity$Shannon, method = 'spearman')
+
+
+# Comparing all PROBIOTIC to NON probiotic treatments vs just across treatments
+physeq_pro <- qza_to_phyloseq(features="asv-table-taxa-sample-filt.qza",
+                          tree="tree.qza",
+                          taxonomy="gg-taxonomy.qza",
+                          metadata= "metadata_pro.tsv")
+set.seed(6500) # For reproducibility
+rarefied_physeq_pro <- rarefy_even_depth(physeq_pro, sample.size = 22180, replace = FALSE, trimOTUs = TRUE)
+
+# LCW
+LCW<-subset_samples(rarefied_physeq_pro, sample_type == "LCW")
+sample_data(LCW)
+# make table with alpha diversity metrics
+LCW_alpha_diversity<- estimate_richness(LCW)
+LCW_alpha_diversity<- cbind(sample_data(LCW), LCW_alpha_diversity)
+LCW_evenness<- evenness(LCW, index = "pielou", zeroes=TRUE, detection=0)
+LCW_alpha_diversity<- cbind(LCW_alpha_diversity, LCW_evenness)
+
+# plot
+a<-ggplot(LCW_alpha_diversity, aes(x=probiotics, y=pielou))+
+  geom_boxplot()+
+  geom_point()+
+  facet_wrap(~days_post_hatch)
+b<-ggplot(LCW_alpha_diversity, aes(x=probiotics, y=Observed))+
+  geom_boxplot()+
+  geom_point()+
+  facet_wrap(~days_post_hatch)
+c<-ggplot(LCW_alpha_diversity, aes(x=probiotics, y=Shannon))+
+  geom_boxplot()+
+  geom_point()+
+  facet_wrap(~days_post_hatch)
+ggarrange(a, b, c,
+          ncol = 3, nrow = 1)
+
+#Statistics
+LCW_11_alpha_diversity <- subset(LCW_alpha_diversity, days_post_hatch == "11")
+kruskal.test(Observed ~ probiotics, LCW_11_alpha_diversity) #0.4386
+kruskal.test(pielou ~ probiotics, LCW_11_alpha_diversity) #0.2453
+kruskal.test(Shannon ~ probiotics, LCW_11_alpha_diversity) #0.3017
+kruskal.test(Observed ~ treatment, LCW_11_alpha_diversity) #0.2923
+kruskal.test(pielou ~ treatment, LCW_11_alpha_diversity) #0.4575
+kruskal.test(Shannon ~ treatment, LCW_11_alpha_diversity) #0.6594
+LCW_18_alpha_diversity <- subset(LCW_alpha_diversity, days_post_hatch == "18")
+kruskal.test(Observed ~ probiotics, LCW_18_alpha_diversity) #0.2472
+kruskal.test(pielou ~ probiotics, LCW_18_alpha_diversity) #0.3545
+kruskal.test(Shannon ~ probiotics, LCW_18_alpha_diversity) #0.4179
+kruskal.test(Observed ~ treatment, LCW_18_alpha_diversity) #0.2064
+kruskal.test(pielou ~ treatment, LCW_18_alpha_diversity) #0.74
+kruskal.test(Shannon ~ treatment, LCW_18_alpha_diversity) #0.747
+
+# LF
+LF<-subset_samples(rarefied_physeq_pro, sample_type == "LF")
+LF_pro<-subset_samples(LF, days_post_hatch != "1")
+# make table with alpha diversity metrics
+LF_alpha_diversity<- estimate_richness(LF_pro)
+LF_alpha_diversity<- cbind(sample_data(LF_pro), LF_alpha_diversity)
+LF_evenness<- evenness(LF_pro, index = "pielou", zeroes=TRUE, detection=0)
+LF_alpha_diversity<- cbind(LF_alpha_diversity, LF_evenness)
+
+# plot
+a<-ggplot(LF_alpha_diversity, aes(x=probiotics, y=pielou, fill = probiotics))+
+  geom_boxplot()+
+  geom_point()+
+  facet_wrap(~days_post_hatch)+
+  scale_fill_manual(values = c("#440154", "#29AF7FFF"))+
+  theme(legend.position = "none")
+b<-ggplot(LF_alpha_diversity, aes(x=probiotics, y=Observed, fill = probiotics))+
+  geom_boxplot()+
+  geom_point()+
+  facet_wrap(~days_post_hatch)+
+  scale_fill_manual(values = c("#440154", "#29AF7FFF"))+
+  theme(legend.position = "none")
+c<-ggplot(LF_alpha_diversity, aes(x=probiotics, y=Shannon, fill = probiotics))+
+  geom_boxplot()+
+  theme_bw()+
+  facet_wrap(~days_post_hatch)+
+  scale_fill_manual(values = c("#440154", "#29AF7FFF"))+
+  theme(legend.position = "none")+
+  ylab("Shannon Diversity")
+ggarrange(a, b, c,
+          ncol = 3, nrow = 1)
+
+#Statistics
+LF_5_alpha_diversity <- subset(LF_alpha_diversity, days_post_hatch == "5")
+kruskal.test(Observed ~ probiotics, LF_5_alpha_diversity) #0.40
+kruskal.test(pielou ~ probiotics, LF_5_alpha_diversity) #0.17
+kruskal.test(Shannon ~ probiotics, LF_5_alpha_diversity) #0.29
+kruskal.test(Observed ~ treatment, LF_5_alpha_diversity) #0.6306
+kruskal.test(pielou ~ treatment, LF_5_alpha_diversity) #0.277
+kruskal.test(Shannon ~ treatment, LF_5_alpha_diversity) #0.3782
+LF_11_alpha_diversity <- subset(LF_alpha_diversity, days_post_hatch == "11")
+kruskal.test(Observed ~ probiotics, LF_11_alpha_diversity) #0.08
+kruskal.test(pielou ~ probiotics, LF_11_alpha_diversity) #0.48
+kruskal.test(Shannon ~ probiotics, LF_11_alpha_diversity) #0.16
+kruskal.test(Observed ~ treatment, LF_11_alpha_diversity) #0.09
+kruskal.test(pielou ~ treatment, LF_11_alpha_diversity) #0.6939
+kruskal.test(Shannon ~ treatment, LF_11_alpha_diversity) #0.4952
+LF_18_alpha_diversity <- subset(LF_alpha_diversity, days_post_hatch == "18")
+kruskal.test(Observed ~ probiotics, LF_18_alpha_diversity) #0.25
+kruskal.test(pielou ~ probiotics, LF_18_alpha_diversity) #0.40
+kruskal.test(Shannon ~ probiotics, LF_18_alpha_diversity) #0.25
+kruskal.test(Observed ~ treatment, LF_18_alpha_diversity) #0.01789*
+kruskal.test(pielou ~ treatment, LF_18_alpha_diversity) #0.60
+kruskal.test(Shannon ~ treatment, LF_18_alpha_diversity) #0.235
+LF_46_alpha_diversity <- subset(LF_alpha_diversity, days_post_hatch == "46")
+kruskal.test(Observed ~ probiotics, LF_46_alpha_diversity) #0.45
+kruskal.test(pielou ~ probiotics, LF_46_alpha_diversity) #0.04
+kruskal.test(Shannon ~ probiotics, LF_46_alpha_diversity) # chi-squared = 4.8348 #0.028
+kruskal.test(Observed ~ treatment, LF_46_alpha_diversity) #0.274
+kruskal.test(pielou ~ treatment, LF_46_alpha_diversity) #0.2134
+kruskal.test(Shannon ~ treatment, LF_46_alpha_diversity) #0.134
+
+
+# plot all treatments over time
+LF<-subset_samples(rarefied_physeq_pro, sample_type == "LF")
+# make table with alpha diversity metrics
+LF_alpha_diversity<- estimate_richness(LF)
+LF_alpha_diversity<- cbind(sample_data(LF), LF_alpha_diversity)
+LF_evenness<- evenness(LF, index = "pielou", zeroes=TRUE, detection=0)
+LF_alpha_diversity<- cbind(LF_alpha_diversity, LF_evenness)
+ggplot(LF_alpha_diversity, aes(x=days_post_hatch, y=Shannon, color=probiotics)) +
+  stat_summary(geom="errorbar", fun.data=mean_se, width=1) +
+  stat_summary(geom="line", fun.data=mean_se, linewidth=1) +
+  stat_summary(geom="point", fun.data=mean_se) +
+  xlab("Days Post Hatch") +
+  ylab("Shannon Diversity") +
+  theme_bw()+
+  scale_color_viridis_d(name="Probiotic Treatment")
+ggplot(LF_alpha_diversity, aes(x=days_post_hatch, y=pielou, color=probiotics)) +
+  stat_summary(geom="errorbar", fun.data=mean_se, width=1) +
+  stat_summary(geom="line", fun.data=mean_se, linewidth=1) +
+  stat_summary(geom="point", fun.data=mean_se) +
+  xlab("Days Post Hatch") +
+  ylab("Evenness") +
+  theme_bw()+
+  scale_color_viridis_d(name="Probiotic Treatment")
+ggplot(LF_alpha_diversity, aes(x=days_post_hatch, y=Observed, color=probiotics)) +
+  stat_summary(geom="errorbar", fun.data=mean_se, width=1) +
+  stat_summary(geom="line", fun.data=mean_se, linewidth=1) +
+  stat_summary(geom="point", fun.data=mean_se) +
+  xlab("Days Post Hatch") +
+  ylab("Richness") +
+  theme_bw()+
+  scale_color_viridis_d(name="Probiotic Treatment")
+
+library(rstatix)
+kruskal.test(pielou ~ days_post_hatch, LF_alpha_diversity)
+dunn_test(LF_alpha_diversity, pielou ~ days_post_hatch, p.adjust.method = "BH")
+kruskal.test(Shannon ~ days_post_hatch, LF_alpha_diversity)
+dunn_test(LF_alpha_diversity, Shannon ~ days_post_hatch, p.adjust.method = "BH")
+
+
+# Taxa bar plots --------
+# in order to merge samples within treatments, better to have a numerical column for treatment
+# make this is metadata3
+physeq <- qza_to_phyloseq(features="asv-table-taxa-sample-filt.qza",
+                          tree="tree.qza",
+                          taxonomy="gg-taxonomy.qza",
+                          metadata= "metadata3.tsv")
+set.seed(6500) # For reproducibility
+rarefied_physeq <- rarefy_even_depth(physeq, sample.size = 22180, replace = FALSE, trimOTUs = TRUE)
+
+# first, need to merge samples across treatment groups
+# https://joey711.github.io/phyloseq-demo/Restroom-Biogeography.html
+rarefied_physeq_merged = merge_samples(rarefied_physeq, "treatment")
+
+# repair merged values
+# now using treatment_numeric
+# order is 2, 1, 3, 4, 5
+sample_data(rarefied_physeq_merged)$treatment <- c("Control", "Probiotic Artemia", "Probiotic fed via Artemia", "Probiotic in water", "Rotifer addition")
+
+# transform to %
+rarefied_physeq_merged = transform_sample_counts(rarefied_physeq_merged, function(x) 100 * x/sum(x))
+
+# select only top 20 most abundant OTUs
+top20otus = names(sort(taxa_sums(rarefied_physeq_merged), TRUE)[1:20])
+taxtab20 = cbind(tax_table(rarefied_physeq_merged), family20 = NA)
+taxtab20[top20otus, "family20"] <- as(tax_table(rarefied_physeq_merged)[top20otus, "Family"], 
+                                      "character")
+tax_table(rarefied_physeq_merged) <- tax_table(taxtab20)
+
+#create abundance plot
+title = "Taxa Barplot Across treatments"
+plot_bar(rarefied_physeq_merged, "treatment", fill = "family20", title = title) + coord_flip()
+
+###### create barplots per sample type ##########
+# dont forget to use metadata3 phyloseq
+
+# LCW 
+LCW<-subset_samples(rarefied_physeq, sample_type == "LCW")
+# merge LCW samples across treatment group
+LCW_merged = merge_samples(LCW, "treatment")
+# repair merged phyloseq
+sample_data(LCW_merged)$treatment <- c("Control", "Probiotic fed via Artemia", 
+                                       "Probiotic in water", "Rotifer addition")
+# transform to %
+LCW_merged = transform_sample_counts(LCW_merged, function(x) 100 * x/sum(x))
+# select top 20
+top20otus = names(sort(taxa_sums(LCW_merged), TRUE)[1:20])
+taxtab20 = cbind(tax_table(LCW_merged), family20 = NA)
+taxtab20[top20otus, "family20"] <- as(tax_table(LCW_merged)[top20otus, "Family"], 
+                                      "character")
+tax_table(LCW_merged) <- tax_table(taxtab20)
+# plot
+title = "Taxa Barplot: LCW Across treatments"
+plot_bar(LCW_merged, "treatment", fill = "family20", title = title) + coord_flip()
+
+# agglomerate at genus instead
+# select top 20
+taxtabgenus20 = cbind(tax_table(LCW_merged), genus20 = NA)
+taxtabgenus20[top20otus, "genus20"] <- as(tax_table(LCW_merged)[top20otus, "Genus"], 
+                                      "character")
+tax_table(LCW_merged) <- tax_table(taxtabgenus20)
+# plot
+title = "Taxa Barplot: LCW Across treatments"
+plot_bar(LCW_merged, "treatment", fill = "genus20", title = title) + coord_flip()
+
+# LF
+LF<-subset_samples(rarefied_physeq, sample_type == "LF")
+# merge LCW samples across treatment group
+LF_merged = merge_samples(LF, "treatment")
+# repair merged phyloseq
+sample_data(LF_merged)$treatment <- c("Control", "Probiotic fed via Artemia", 
+                                       "Probiotic in water", "Rotifer addition")
+# transform to %
+LF_merged = transform_sample_counts(LF_merged, function(x) 100 * x/sum(x))
+# select top 20
+top20otus = names(sort(taxa_sums(LF_merged), TRUE)[1:20])
+taxtab20 = cbind(tax_table(LF_merged), family20 = NA)
+taxtab20[top20otus, "family20"] <- as(tax_table(LF_merged)[top20otus, "Family"], 
+                                      "character")
+tax_table(LF_merged) <- tax_table(taxtab20)
+# plot
+title = "Taxa Barplot: LF Across treatments"
+plot_bar(LF_merged, "treatment", fill = "family20", title = title) + coord_flip()
+
+# agglomerate at genus instead
+# select top 20
+taxtabgenus20 = cbind(tax_table(LF_merged), genus20 = NA)
+taxtabgenus20[top20otus, "genus20"] <- as(tax_table(LF_merged)[top20otus, "Genus"], 
+                                          "character")
+tax_table(LF_merged) <- tax_table(taxtabgenus20)
+# plot
+title = "Taxa Barplot: LF Across treatments"
+plot_bar(LF_merged, "treatment", fill = "genus20", title = title) + coord_flip()
+
+# Artemia
+ART<-subset_samples(rarefied_physeq, sample_type == "ART")
+ART<-subset_samples(ART, days_post_hatch %in% c("11", "18"))
+# transform to %
+ART = transform_sample_counts(ART, function(x) 100 * x/sum(x))
+# select top 20
+top20otus = names(sort(taxa_sums(ART), TRUE)[1:20])
+taxtab20 = cbind(tax_table(ART), family20 = NA)
+taxtab20[top20otus, "family20"] <- as(tax_table(ART)[top20otus, "Family"], 
+                                      "character")
+tax_table(ART) <- tax_table(taxtab20)
+# plot
+title = "Taxa Barplot: Artemia (MIC)"
+plot_bar(ART, "treatment", fill = "family20", title = title) + coord_flip()
+
+
+# Differential Abundance of LF over time -----
+
+# first need to generate tse from data
+
+install.packages('mia', repos = c('https://bioc.r-universe.dev', 'https://cloud.r-project.org'))
+library(mia)
+
+# use LF phyloseq
+LF<-subset_samples(rarefied_physeq, sample_type == "LF")
+
+# convert to tse
+LF_tse <- makeTreeSummarizedExperimentFromPhyloseq(LF)
+
+# how many observations do we have per group?
+library(dplyr)
+library(knitr)
+count(as.data.frame(colData(LF_tse)), days_post_hatch) %>% kable()
+
+# Library Maaslin
+if(!requireNamespace("BiocManager", quietly = TRUE))
+  install.packages("BiocManager")
+BiocManager::install("Maaslin2")
+
+library(Maaslin2)
+
+# maaslin expects features as columns and samples as rows 
+# for both the asv/otu table as well as meta data 
+asv <- t(assay(tse))
+meta_data <- data.frame(colData(tse))
+
+Maaslin2(input_data = asv, 
+         input_metadata = meta_data, 
+         analysis_method = "LM",
+         normalization = "TSS",
+         min_prevalence = 0.95,
+         min_abundance = 1,
+         max_significance = 0.05,
+         transform = "LOG",
+         output = "outputTIME.95", 
+         fixed_effects = "days_post_hatch",
+         reference = "days_post_hatch,1")
+
+Maaslin2(input_data = asv, 
+         input_metadata = meta_data, 
+         analysis_method = "LM",
+         normalization = "TSS",
+         min_prevalence = 0.8,
+         min_abundance = 1,
+         max_significance = 0.05,
+         transform = "LOG",
+         output = "outputTIME.8", 
+         fixed_effects = "days_post_hatch",
+         reference = "days_post_hatch,1")
+
+Maaslin2(input_data = asv, 
+         input_metadata = meta_data, 
+         analysis_method = "LM",
+         normalization = "TSS",
+         min_prevalence = 0.75,
+         min_abundance = 1,
+         max_significance = 0.05,
+         transform = "LOG",
+         output = "outputTIME.75", 
+         fixed_effects = "days_post_hatch",
+         reference = "days_post_hatch,1")
+
+# honestly, should make the prevalence filter closer to .20 because then it would at least be present in almost all of one group
+# all of the default parameters were used (LM, TSS, LOG)
+
+# Try alternative normalization methods (CSS vs TMM)
+# also try inputting a non-rarefied phyloseq - only LF.P@.11d.11 is low sequence count (2,342)
+# Make LF phyloseq from non-rarefied data
+LF_unrarefied<-subset_samples(physeq, sample_type == "LF")
+
+# convert to tse
+LF_tse_unrarefied <- makeTreeSummarizedExperimentFromPhyloseq(LF_unrarefied)
+
+# how many observations do we have per group?
+count(as.data.frame(colData(LF_tse_unrarefied)), days_post_hatch) %>% kable()
+
+
+# Seems like a good idea to collapse at genus level 
+# https://www.nature.com/articles/s41467-022-28034-z
+# Agglomerate by genus
+LF_tse_unrarefied<-agglomerateByRank(LF_tse_unrarefied, rank = "Genus")
+
+# Try alternative analysis methods 
+# NEGBIN, ZINB because these are for count data 
+# - allows CSS and TMM normalization, but cannot use transform
+# LM on transformed data that is no longer count data
+# - allows TSS or CSS normalization, and use transform to get data into non count form
+
+# finally, setting prevalence filter at 0.5 because too many significant results otherwise
+
+asv <- t(assay(LF_tse_unrarefied))
+meta_data <- data.frame(colData(LF_tse_unrarefied))
+
+Maaslin2(input_data = asv, 
+         input_metadata = meta_data, 
+         analysis_method = "NEGBIN",
+         normalization = "CSS",
+         min_prevalence = 0.5,
+         min_abundance = 1,
+         max_significance = 0.05,
+         transform = "NONE",
+         output = "outputTIME.5.css.negbin", 
+         fixed_effects = "days_post_hatch",
+         reference = "days_post_hatch,1") # new ggplot (v.4) does not work with maaslin2 
+
+Maaslin2(input_data = asv, 
+         input_metadata = meta_data, 
+         analysis_method = "NEGBIN",
+         normalization = "TMM",
+         min_prevalence = 0.5,
+         min_abundance = 1,
+         max_significance = 0.05,
+         transform = "NONE",
+         output = "outputTIME.5.tmm.negbin", 
+         fixed_effects = "days_post_hatch",
+         reference = "days_post_hatch,1")
+
+# convert counts to relative abundance
+LF_tse_unrarefied <- transformAssay(LF_tse_unrarefied, assay.type = "counts", method = "relabundance")
+asv <- t(assay(LF_tse_unrarefied))
+meta_data <- data.frame(colData(LF_tse_unrarefied))
+
+Maaslin2(input_data = asv, 
+         input_metadata = meta_data, 
+         analysis_method = "LM",
+         normalization = "TSS",
+         min_prevalence = 0.5,
+         min_abundance = 1,
+         max_significance = 0.05,
+         transform = "LOG",
+         output = "outputTIME.5.tss.lm", 
+         fixed_effects = "days_post_hatch",
+         reference = "days_post_hatch,1")
+
+Maaslin2(input_data = asv, 
+         input_metadata = meta_data, 
+         analysis_method = "LM",
+         normalization = "CLR",
+         min_prevalence = 0.5,
+         min_abundance = 1,
+         max_significance = 0.05,
+         transform = "LOG",
+         output = "outputtest", 
+         fixed_effects = "days_post_hatch",
+         reference = "days_post_hatch,1")
+
+# Default p adjustment is Benjamini-Hochberg
+
+# Differential Abundance of LF compared to LCW -----
+
+# argument for ancom-bc: https://www.nature.com/articles/s41522-020-00160-w
+if (!requireNamespace("BiocManager", quietly = TRUE))
+  install.packages("BiocManager")
+BiocManager::install("ANCOMBC", version = "3.18")
+
+library(ANCOMBC)
+library(mia)
+library(dplyr)
+library(knitr)
+library(tidyverse)
+library(DT)
+
+# Use LF and LCW at 11 and 18 dph for even sample sizes
+LCW_LF_unrarefied<-subset_samples(physeq, sample_type != "ART")
+LCW_LF_11_18_unrarefied<-subset_samples(LCW_LF_unrarefied, days_post_hatch %in% c("11", "18"))
+
+# remove unassigned taxa
+LCW_LF_11_18_unrarefied_filtered <- subset_taxa(LCW_LF_11_18_unrarefied, Kingdom != "Unassigned")
+
+# make tse
+LCW_LF_11_18_tse <- makeTreeSummarizedExperimentFromPhyloseq(LCW_LF_11_18_unrarefied_filtered)
+count(as.data.frame(colData(LCW_LF_11_18_tse)), sample_type) %>% kable()
+
+# run ANCOM-BC2
+ancomSampleType <- ancombc2(
+  data = LCW_LF_11_18_tse,
+  tax_level="Genus",
+  fix_formula = "sample_type",
+  p_adj_method = "fdr", #equivalent to BH
+  prv_cut = 0.5,
+  lib_cut = 100, 
+  group = "sample_type", 
+  struc_zero = TRUE, # true when group is categorical
+  neg_lb = TRUE, # only true if struc zero is true
+  iter_control = list(tol = 1e-5, max_iter = 100, verbose = FALSE),
+  em_control = list(tol = 1e-5, max_iter = 100), # use max_iter >= 100 on real data 
+  alpha = 0.05
+)
+
+# look at structural zeros
+tab_zero = ancomSampleType$zero_ind
+tab_zero %>%
+  datatable(caption = "The detection of structural zeros")
+
+#primary analysis
+res = ancomSampleType$res # LCW seems to be intercept and LF is variable of interest
+
+#plot 
+
+res<-filter(res, diff_sample_typeLF == TRUE) #filter to significant results
+df_fig = res %>% 
+  dplyr::arrange(desc(lfc_sample_typeLF)) %>%
+  dplyr::mutate(direct = ifelse(lfc_sample_typeLF> 0, "Positive LFC", "Negative LFC"))
+
+df_fig$direct = factor(df_fig$direct, 
+                       levels = c("Positive LFC", "Negative LFC"))
+#plot
+ggplot(df_fig, aes(x = reorder(taxon, lfc_sample_typeLF), y = lfc_sample_typeLF, fill = direct, color = direct)) + 
+  geom_bar(stat = "identity", width = 0.7, color = "black", 
+           position = position_dodge(width = 0.4)) +
+  geom_errorbar(aes(ymin = lfc_sample_typeLF - se_sample_typeLF, ymax = lfc_sample_typeLF + se_sample_typeLF), 
+                width = 0.2, position = position_dodge(0.05), color = "black") + 
+  labs(x = NULL, y = "Log fold change", 
+       title = "Log fold changes for LF compared to LCW") + 
+  scale_fill_manual(values = c("blue", "orange")) +
+  theme_bw() + 
+  theme(plot.title = element_text(hjust = 0.5),
+        panel.grid.minor.y = element_blank(),
+        axis.text.x = element_text(angle = 60, hjust = 1))+ coord_flip()
+
+
+# Differential Abundance between probiotic treated or untreated conditions -----
+
+library(ANCOMBC) #version = "3.18"
+library(mia)
+library(dplyr)
+library(knitr)
+library(tidyverse)
+library(DT)
+
+library(qiime2R)
+library(phyloseq)
+physeq_pro <- qza_to_phyloseq(features="asv-table-taxa-sample-filt.qza",
+                              tree="tree.qza",
+                              taxonomy="gg-taxonomy.qza",
+                              metadata="metadata_pro.tsv")
+
+# LCW 11 dph (unrarefied phyloseq)
+LCW_unrarefied<-subset_samples(physeq_pro, sample_type == "LCW")
+LCW_11_unrarefied<-subset_samples(LCW_unrarefied, days_post_hatch == "11")
+
+# remove unassigned taxa
+LCW_11_unrarefied_filtered <- subset_taxa(LCW_11_unrarefied, Kingdom != "Unassigned")
+
+# make tse
+LCW_11_tse <- makeTreeSummarizedExperimentFromPhyloseq(LCW_11_unrarefied_filtered)
+count(as.data.frame(colData(LCW_11_tse)), probiotics) %>% kable()
+
+# run ANCOM-BC2
+ancomProbiotics <- ancombc2(
+  data = LCW_11_tse,
+  tax_level="Genus",
+  fix_formula = "probiotics",
+  p_adj_method = "fdr", #equivalent to BH
+  prv_cut = 0.5,
+  lib_cut = 100, 
+  group = "probiotics", 
+  struc_zero = TRUE, # true when group is categorical
+  neg_lb = TRUE, # only true if struc zero is true
+  iter_control = list(tol = 1e-5, max_iter = 100, verbose = FALSE),
+  em_control = list(tol = 1e-5, max_iter = 100), # use max_iter >= 100 on real data 
+  alpha = 0.05
+)
+
+# look at structural zeros
+tab_zero = ancomProbiotics$zero_ind
+tab_zero %>%
+  datatable(caption = "The detection of structural zeros")
+
+#primary analysis
+res = ancomProbiotics$res 
+
+#plot 
+
+res<-filter(res, diff_probioticsprobiotic == TRUE) #filter to significant results
+df_fig = res %>% 
+  dplyr::arrange(desc(lfc_probioticsprobiotic)) %>%
+  dplyr::mutate(direct = ifelse(lfc_probioticsprobiotic> 0, "Positive LFC", "Negative LFC"))
+
+df_fig$direction = factor(df_fig$direct, 
+                          levels = c("Positive LFC", "Negative LFC"))
+#plot
+ggplot(df_fig, aes(x = reorder(taxon, lfc_probioticsprobiotic), y = lfc_probioticsprobiotic, fill = direction, color = direction)) + 
+  geom_bar(stat = "identity", width = 0.7, color = "black", 
+           position = position_dodge(width = 0.4)) +
+  geom_errorbar(aes(ymin = lfc_probioticsprobiotic - se_probioticsprobiotic, ymax = lfc_probioticsprobiotic + se_probioticsprobiotic), 
+                width = 0.2, position = position_dodge(0.05), color = "black") + 
+  labs(x = NULL, y = "Log fold change", 
+       title = "Log fold changes with Probiotics") + 
+  scale_fill_manual(values = c("#29AF7FFF", "purple")) +
+  theme_bw() + 
+  theme(plot.title = element_text(hjust = 0.5),
+        panel.grid.minor.y = element_blank(),
+        axis.text.x = element_text(angle = 60, hjust = 1))+ coord_flip()
+
+
+
+# LF 11 dph (unrarefied phyloseq)
+LF_unrarefied<-subset_samples(physeq_pro, sample_type == "LF")
+LF_11_unrarefied<-subset_samples(LF_unrarefied, days_post_hatch == "11")
+
+# remove unassigned taxa
+LF_11_unrarefied_filtered <- subset_taxa(LF_11_unrarefied, Kingdom != "Unassigned")
+
+# make tse
+LF_11_tse <- makeTreeSummarizedExperimentFromPhyloseq(LF_11_unrarefied_filtered)
+count(as.data.frame(colData(LF_11_tse)), probiotics) %>% kable()
+
+# run ANCOM-BC2
+ancomProbiotics <- ancombc2(
+  data = LF_11_tse,
+  tax_level="Genus",
+  fix_formula = "probiotics",
+  p_adj_method = "fdr", #equivalent to BH
+  prv_cut = 0.5,
+  lib_cut = 100, 
+  group = "probiotics", 
+  struc_zero = TRUE, # true when group is categorical
+  neg_lb = TRUE, # only true if struc zero is true
+  iter_control = list(tol = 1e-5, max_iter = 100, verbose = FALSE),
+  em_control = list(tol = 1e-5, max_iter = 100), # use max_iter >= 100 on real data 
+  alpha = 0.05
+)
+
+# look at structural zeros
+tab_zero = ancomProbiotics$zero_ind
+tab_zero %>%
+  datatable(caption = "The detection of structural zeros")
+
+#primary analysis
+res = ancomProbiotics$res 
+
+res<-filter(res, diff_probioticsprobiotic == TRUE) #filter to significant results
+# no significantly different features
+
+
+# LF 18 dph (unrarefied phyloseq)
+LF_unrarefied<-subset_samples(physeq_pro, sample_type == "LF")
+LF_18_unrarefied<-subset_samples(LF_unrarefied, days_post_hatch == "18")
+
+# remove unassigned taxa
+LF_18_unrarefied_filtered <- subset_taxa(LF_18_unrarefied, Kingdom != "Unassigned")
+
+# make tse
+LF_18_tse <- makeTreeSummarizedExperimentFromPhyloseq(LF_18_unrarefied_filtered)
+count(as.data.frame(colData(LF_18_tse)), probiotics) %>% kable()
+
+# run ANCOM-BC2
+ancomProbiotics <- ancombc2(
+  data = LF_18_tse,
+  tax_level="Genus",
+  fix_formula = "probiotics",
+  p_adj_method = "fdr", #equivalent to BH
+  prv_cut = 0.5,
+  lib_cut = 100, 
+  group = "probiotics", 
+  struc_zero = TRUE, # true when group is categorical
+  neg_lb = TRUE, # only true if struc zero is true
+  iter_control = list(tol = 1e-5, max_iter = 100, verbose = FALSE),
+  em_control = list(tol = 1e-5, max_iter = 100), # use max_iter >= 100 on real data 
+  alpha = 0.05
+)
+
+# look at structural zeros
+tab_zero = ancomProbiotics$zero_ind
+tab_zero %>%
+  datatable(caption = "The detection of structural zeros")
+
+#primary analysis
+res = ancomProbiotics$res 
+
+#plot 
+
+res<-filter(res, diff_probioticsprobiotic == TRUE) #filter to significant results
+df_fig = res %>% 
+  dplyr::arrange(desc(lfc_probioticsprobiotic)) %>%
+  dplyr::mutate(direct = ifelse(lfc_probioticsprobiotic> 0, "Positive LFC", "Negative LFC"))
+
+df_fig$direction = factor(df_fig$direct, 
+                          levels = c("Positive LFC", "Negative LFC"))
+#plot
+ggplot(df_fig, aes(x = reorder(taxon, lfc_probioticsprobiotic), y = lfc_probioticsprobiotic, fill = direction, color = direction)) + 
+  geom_bar(stat = "identity", width = 0.7, color = "black", 
+           position = position_dodge(width = 0.4)) +
+  geom_errorbar(aes(ymin = lfc_probioticsprobiotic - se_probioticsprobiotic, ymax = lfc_probioticsprobiotic + se_probioticsprobiotic), 
+                width = 0.2, position = position_dodge(0.05), color = "black") + 
+  labs(x = NULL, y = "Log fold change", 
+       title = "Log fold changes with Probiotics") + 
+  scale_fill_manual(values = c("#29AF7FFF", "purple")) +
+  theme_bw() + 
+  theme(plot.title = element_text(hjust = 0.5),
+        panel.grid.minor.y = element_blank(),
+        axis.text.x = element_text(angle = 60, hjust = 1))+ coord_flip()
+
+
+
+# LF, LCW and 11, 18dph diff abundance
+# (unrarefied phyloseq)
+LCW_LF_unrarefied<-subset_samples(physeq_pro, sample_type != "ART")
+LCW_LF_11_18_unrarefied<-subset_samples(LCW_LF_unrarefied, days_post_hatch %in% c("11", "18"))
+
+# remove unassigned taxa
+LCW_LF_11_18_unrarefied_filtered <- subset_taxa(LCW_LF_11_18_unrarefied, Kingdom != "Unassigned")
+
+# make tse
+LCW_LF_11_18_tse <- makeTreeSummarizedExperimentFromPhyloseq(LCW_LF_11_18_unrarefied_filtered)
+count(as.data.frame(colData(LCW_LF_11_18_tse)), probiotics) %>% kable()
+
+# run ANCOM-BC2
+ancomProbiotics <- ancombc2(
+  data = LCW_LF_11_18_tse,
+  tax_level="Genus",
+  fix_formula = "probiotics",
+  p_adj_method = "fdr", #equivalent to BH
+  prv_cut = 0.5,
+  lib_cut = 100, 
+  group = "probiotics", 
+  struc_zero = TRUE, # true when group is categorical
+  neg_lb = TRUE, # only true if struc zero is true
+  iter_control = list(tol = 1e-5, max_iter = 100, verbose = FALSE),
+  em_control = list(tol = 1e-5, max_iter = 100), # use max_iter >= 100 on real data 
+  alpha = 0.05
+)
+
+# look at structural zeros
+tab_zero = ancomProbiotics$zero_ind
+tab_zero %>%
+  datatable(caption = "The detection of structural zeros")
+
+#primary analysis
+res = ancomProbiotics$res 
+
+#plot 
+
+res<-filter(res, diff_probioticsprobiotic == TRUE) #filter to significant results
+df_fig = res %>% 
+  dplyr::arrange(desc(lfc_probioticsprobiotic)) %>%
+  dplyr::mutate(direct = ifelse(lfc_probioticsprobiotic> 0, "Positive LFC", "Negative LFC"))
+
+df_fig$direction = factor(df_fig$direct, 
+                          levels = c("Positive LFC", "Negative LFC"))
+#plot
+ggplot(df_fig, aes(x = reorder(taxon, lfc_probioticsprobiotic), y = lfc_probioticsprobiotic, fill = direction, color = direction)) + 
+  geom_bar(stat = "identity", width = 0.7, color = "black", 
+           position = position_dodge(width = 0.4)) +
+  geom_errorbar(aes(ymin = lfc_probioticsprobiotic - se_probioticsprobiotic, ymax = lfc_probioticsprobiotic + se_probioticsprobiotic), 
+                width = 0.2, position = position_dodge(0.05), color = "black") + 
+  labs(x = NULL, y = "Log fold change", 
+       title = "Log fold changes with Probiotics") + 
+  scale_fill_manual(values = c("#29AF7FFF", "purple")) +
+  theme_bw() + 
+  theme(plot.title = element_text(hjust = 0.5),
+        panel.grid.minor.y = element_blank(),
+        axis.text.x = element_text(angle = 60, hjust = 1))+ coord_flip()
+
+# ANCOM-BC2 across different treatment groups
+# because weighted unifrac of lcw and LF at 11 and 18 dph was significant
+# then it was shown to be drivne by LCW
+# (unrarefied phyloseq)
+LCW_unrarefied<-subset_samples(physeq, sample_type == "LCW")
+LCW_11_18_unrarefied<-subset_samples(LCW_unrarefied, days_post_hatch %in% c("11", "18"))
+
+# remove unassigned taxa
+LCW_11_18_unrarefied_filtered <- subset_taxa(LCW_11_18_unrarefied, Kingdom != "Unassigned")
+
+# make tse
+LCW_11_18_tse <- makeTreeSummarizedExperimentFromPhyloseq(LCW_11_18_unrarefied_filtered)
+count(as.data.frame(colData(LCW_11_18_tse)), treatment) %>% kable()
+count(as.data.frame(colData(LCW_11_18_tse)), days_post_hatch) %>% kable()
+
+# run ANCOM-BC2
+ancomTreatment <- ancombc2(
+  data = LCW_11_18_tse,
+  tax_level="Genus",
+  fix_formula = "treatment",
+  p_adj_method = "fdr", #equivalent to BH
+  prv_cut = 0.5,
+  lib_cut = 100, 
+  group = "treatment", 
+  struc_zero = TRUE, # true when group is categorical
+  neg_lb = TRUE, # only true if struc zero is true
+  iter_control = list(tol = 1e-5, max_iter = 100, verbose = FALSE),
+  em_control = list(tol = 1e-5, max_iter = 100), # use max_iter >= 100 on real data 
+  alpha = 0.05
+)
+
+# look at structural zeros
+tab_zero = ancomTreatment$zero_ind
+tab_zero %>%
+  datatable(caption = "The detection of structural zeros")
+
+#primary analysis
+res = ancomTreatment$res
+
+#plot, starting with control compared to P1 
+
+res<-filter(res, diff_treatmentP1 == TRUE) #filter to significant results
+df_fig = res %>% 
+  dplyr::arrange(desc(lfc_treatmentP1)) %>%
+  dplyr::mutate(direct = ifelse(lfc_treatmentP1> 0, "Positive LFC", "Negative LFC"))
+
+df_fig$direction = factor(df_fig$direct, 
+                          levels = c("Positive LFC", "Negative LFC"))
+#plot
+ggplot(df_fig, aes(x = reorder(taxon, lfc_treatmentP1), y = lfc_treatmentP1, fill = direction, color = direction)) + 
+  geom_bar(stat = "identity", width = 0.7, color = "black", 
+           position = position_dodge(width = 0.4)) +
+  geom_errorbar(aes(ymin = lfc_treatmentP1 - se_treatmentP1, ymax = lfc_treatmentP1 + se_treatmentP1), 
+                width = 0.2, position = position_dodge(0.05), color = "black") + 
+  labs(x = NULL, y = "Log fold change", 
+       title = "Log fold changes with Probiotics in Artemia") + 
+  scale_fill_manual(values = c("#29AF7FFF", "purple")) +
+  theme_bw() + 
+  theme(plot.title = element_text(hjust = 0.5),
+        panel.grid.minor.y = element_blank(),
+        axis.text.x = element_text(angle = 60, hjust = 1))+ coord_flip()
+
+# P2
+res = ancomTreatment$res
+res<-filter(res, diff_treatmentP2 == TRUE) #filter to significant results
+df_fig = res %>% 
+  dplyr::arrange(desc(lfc_treatmentP2)) %>%
+  dplyr::mutate(direct = ifelse(lfc_treatmentP2> 0, "Positive LFC", "Negative LFC"))
+
+df_fig$direction = factor(df_fig$direct, 
+                          levels = c("Positive LFC", "Negative LFC"))
+#plot
+ggplot(df_fig, aes(x = reorder(taxon, lfc_treatmentP2), y = lfc_treatmentP2, fill = direction, color = direction)) + 
+  geom_bar(stat = "identity", width = 0.7, color = "black", 
+           position = position_dodge(width = 0.4)) +
+  geom_errorbar(aes(ymin = lfc_treatmentP2 - se_treatmentP2, ymax = lfc_treatmentP2 + se_treatmentP2), 
+                width = 0.2, position = position_dodge(0.05), color = "black") + 
+  labs(x = NULL, y = "Log fold change", 
+       title = "Log fold changes with Probiotics in Water") + 
+  scale_fill_manual(values = c("#29AF7FFF", "purple")) +
+  theme_bw() + 
+  theme(plot.title = element_text(hjust = 0.5),
+        panel.grid.minor.y = element_blank(),
+        axis.text.x = element_text(angle = 60, hjust = 1))+ coord_flip()
+
+# R
+res = ancomTreatment$res
+res<-filter(res, diff_treatmentR == TRUE) #filter to significant results
+
+# no significantly different features?
+
+
+# Venn Diagram -----
+
+# Option 1
+# https://microbiome.github.io/tutorials/core_venn.html 
+install.packages("eulerr")
+install.packages("microbiome")
+devtools::install_github('microsud/microbiomeutilities')
+library(eulerr)
+library(microbiome)
+library(microbiomeutilities)
+
+# how many samples per sample type?
+table(meta(rarefied_physeq)$sample_type, useNA = "always")
+
+# convert to relative abundances
+pseq.rel <- microbiome::transform(rarefied_physeq, "compositional")
+
+# make a list
+sample_types <- unique(as.character(meta(pseq.rel)$sample_type))
+print(sample_types)
+
+# Write a for loop to go through each of the sample types one by one and combine identified core taxa into a list.
+
+list_core <- c() # an empty object to store information
+
+for (n in sample_types){ # for each variable n in sample_type
+  #print(paste0("Identifying Core Taxa for ", n))
+  
+  ps.sub <- subset_samples(pseq.rel, sample_type == n) # Choose sample from sample type by n
+  
+  core_m <- core_members(ps.sub, # ps.sub is phyloseq selected with only samples from g 
+                         detection = 0.001, # 0.001 in atleast 90% samples 
+                         prevalence = 0.75)
+  print(paste0("No. of core taxa in ", n, " : ", length(core_m))) # print core taxa identified in each Sample type.
+  list_core[[n]] <- core_m # add to a list core taxa for each group.
+  #print(list_core)
+}
+
+# Specify colors and plot venn
+# supplying colors in the order they appear in list_core
+mycols <- c(ART="#d6e2e9", LCW="#cbf3f0", LF="#fcf5c7")
+plot(venn(list_core),
+     fills = mycols)
+
+print(list_core)
+
+# Option 2
+#https://yulab-smu.top/MicrobiotaProcessWorkshop/articles/MicrobiotaProcessWorkshop.html#5-beta-analysis
+if (!requireNamespace("BiocManager", quietly=TRUE))
+  install.packages("BiocManager")
+## BiocManager::install("BiocUpgrade") ## you may need this
+BiocManager::install("MicrobiotaProcess")
+
+# subset to only 11 and 18 dph
+
+lcw_lf_art_11_18<-subset_samples(rarefied_physeq, days_post_hatch %in% c("11", "18"))
+View(sample_data(lcw_lf_art_11_18))
+
+# subset to only probiotic conditions
+
+lcw_lf_art_11_18_pro<-subset_samples(lcw_lf_art_11_18, treatment %in% c("MIC", "P1", "P2"))
+View(sample_data(lcw_lf_art_11_18_pro))
+
+# create venn
+
+library(MicrobiotaProcess)
+vennlist <- get_vennlist(obj=lcw_lf_art_11_18_pro, factorNames="sample_type")
+library(VennDiagram)
+vennp <- venn.diagram(vennlist,
+                      height=5,
+                      width=5, 
+                      filename=NULL, 
+                      fill=c("purple", "lightblue", "lightgreen"),
+                      cat.col=c("purple", "lightblue", "lightgreen"),
+                      alpha = 0.85, 
+                      fontfamily = "serif",
+                      fontface = "bold",
+                      cex = 1.2,
+                      cat.cex = 1.3,
+                      cat.default.pos = "outer",
+                      cat.dist=0.1,
+                      margin = 0.1, 
+                      lwd = 3,
+                      lty ='dotted',
+                      imagetype = "svg")
+grid::grid.draw(vennp)
+# NOTE that ART has 430 ASVs, LF has 1007, and LCW has 1785
+
+ART=126/430 # 29% of ART ASVs are unique to ART
+LF=328/1007 # 33% of LF ASVs are unique to LF
+LCW=1101/1785 # 62% of LCW ASVs are unique to LCW
+
+# percentage of contribution from ART to LF
+54/1007 # 5%
+# percentage of contribution from LCW to LF
+434/1007 # 43%
+# number of ASVs shared by ART and LCW but not taken up by LF
+59
+
+# can also export venn list and use in Jvenn
+capture.output(vennlist[["ART"]], file = "ART_taxa.txt")
+
+# make data frames for jvenn
+ART_taxa<-as.data.frame(vennlist[["ART"]])
+ART_taxa$sample_type <- "ART"
+colnames(ART_taxa)[1] <- "ASV"
+
+LCW_taxa<-as.data.frame(vennlist[["LCW"]])
+LCW_taxa$sample_type <- "LCW"
+colnames(LCW_taxa)[1] <- "ASV"
+
+LF_taxa<-as.data.frame(vennlist[["LF"]])
+LF_taxa$sample_type <- "LF"
+colnames(LF_taxa)[1] <- "ASV"
+
+combined_taxa<-rbind(ART_taxa, LCW_taxa, LF_taxa)
+#export as .csv file for Jvenn
+write.csv(combined_taxa, "combined_taxa.csv", row.names = FALSE)
+
+
+# Venn Diagram for 11 dph comparing LCW and LF_____
+LCW_LF<-subset_samples(rarefied_physeq, sample_type != "ART")
+LCW_LF_11<-subset_samples(LCW_LF, days_post_hatch == "11")
+
+# create venn
+library(MicrobiotaProcess)
+vennlist <- get_vennlist(obj=LCW_LF_11, factorNames="sample_type")
+library(VennDiagram)
+vennp <- venn.diagram(vennlist,
+                      height=5,
+                      width=5, 
+                      filename=NULL, 
+                      fill=c("orange", "blue"),
+                      cat.col=c("orange", "blue"),
+                      alpha = 0.85, 
+                      fontfamily = "serif",
+                      fontface = "bold",
+                      cex = 1.2,
+                      cat.cex = 1.3,
+                      cat.default.pos = "outer",
+                      cat.dist=0.1,
+                      margin = 0.1, 
+                      lwd = 3,
+                      lty ='dotted',
+                      imagetype = "svg")
+grid::grid.draw(vennp)
+# 58.37% LF taxa shared with LCW
+
+# Venn Diagram for 18 dph comparing LCW and LF_____
+LCW_LF<-subset_samples(rarefied_physeq, sample_type != "ART")
+LCW_LF_18<-subset_samples(LCW_LF, days_post_hatch == "18")
+
+# create venn
+library(MicrobiotaProcess)
+vennlist <- get_vennlist(obj=LCW_LF_18, factorNames="sample_type")
+library(VennDiagram)
+vennp <- venn.diagram(vennlist,
+                      height=5,
+                      width=5, 
+                      filename=NULL, 
+                      fill=c("orange", "blue"),
+                      cat.col=c("orange", "blue"),
+                      alpha = 0.85, 
+                      fontfamily = "serif",
+                      fontface = "bold",
+                      cex = 1.2,
+                      cat.cex = 1.3,
+                      cat.default.pos = "outer",
+                      cat.dist=0.1,
+                      margin = 0.1, 
+                      lwd = 3,
+                      lty ='dotted',
+                      imagetype = "svg")
+grid::grid.draw(vennp)
+# 69.11% LF taxa shared with LCW
+
+
+
+# SHARED TAXA between only ART and LF
+
+# import list of 54 taxa from jvenn
+common_elements_ART_LF <- read.csv("~/Probiotics/WSB 2024/data/common_elements_ART_LF.txt", 
+                                   sep="")
+
+# extract and manipulate taxonomy table
+taxa_assign <- as.data.frame(rarefied_physeq@tax_table)
+
+#rownames to column
+taxa_assign$Common_elements_art_lf <- row.names(taxa_assign)
+
+#assign taxonomy
+taxa_assign_common_elements<-merge(common_elements_ART_LF, taxa_assign, by = "Common_elements_art_lf", 
+      all.x = TRUE)
+
+
+
+
+# remove names from metadata
+# Define the IDs to remove from metadata 
+ids_to_remove <- c("LCW.C.5d.3", "LCW.C.5d.6", "LCW.C.5d.9",
+                   "LCW.P1.5d.12", "LCW.P1.5d.16", "LCW.P1.5d.2",
+                   "LCW.P1.5d.4", "LCW.P2.5d.11", "LCW.P2.5d.15",
+                   "LCW.P2.5d.5", "LCW.P2.5d.8", "LCW.R.5d.10",
+                   "LCW.R.5d.7", "ART.c.11d.1", "ART.c.11d.2",
+                   "ART.c.11d.3", "ART.c.18d.1", "ART.c.18d.2",
+                   "ART.c.18d.3", "ART.c.5d.1", "ART.c.5d.2",
+                   "ART.c.5d.3")
+
+# Remove rows where 'ID' column matches any of the IDs in 'ids_to_remove'
+subset_metadata <- metadata[!metadata$sample.id %in% ids_to_remove, ]
+
+
